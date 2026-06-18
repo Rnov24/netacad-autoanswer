@@ -5,7 +5,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      width: 300px;
+      width: 320px;
       padding: 10px;
       background-color: #f4f7f6;
     }
@@ -18,12 +18,17 @@
       margin-top: 10px;
       color: #333;
     }
-    input[type="text"], input[type="password"] {
+    input[type="text"], input[type="password"], select {
       width: calc(100% - 22px);
       padding: 8px;
       margin-top: 5px;
       border: 1px solid #ccc;
       border-radius: 4px;
+      box-sizing: content-box;
+    }
+    select {
+      width: 100%;
+      box-sizing: border-box;
     }
     button {
       background-color: #007bff;
@@ -49,10 +54,19 @@
 </head>
 <body>
   <h3>NetAcad AI Assistant</h3>
-  
+
   <label for="apiKey">Gemini API Key:</label>
   <input type="password" id="apiKey" placeholder="Enter your Gemini API Key">
-  
+
+  <label for="geminiModel">Gemini Model:</label>
+  <select id="geminiModel">
+    <option value="gemini-2.5-flash">gemini-2.5-flash (default)</option>
+    <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+    <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+    <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+  </select>
+
   <div style="margin: 10px 0 0 0; display: flex; align-items: center;">
     <input type="checkbox" id="showAnswersToggle" checked style="margin-right: 6px;">
     <label for="showAnswersToggle" style="cursor: pointer;">Show AI Answers</label>
@@ -62,9 +76,9 @@
     <input type="checkbox" id="processOnSwitchToggle" checked style="margin-right: 6px;">
     <label for="processOnSwitchToggle" style="cursor: pointer;">Process on Page Switch</label>
   </div>
-  
-  <button id="saveKey">Save API Key</button>
-  
+
+  <button id="saveKey">Save Settings</button>
+
   <button id="processPage">Process Questions on this Page</button>
 
   <div id="status"></div>
@@ -72,4 +86,4 @@
 
   <script src="popup.js"></script>
 </body>
-</html> 
+</html>

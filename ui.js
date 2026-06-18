@@ -153,6 +153,56 @@ function extractQuestionAndAnswers(mcqViewElement, index) {
   return { questionText, answerElements, questionTextElement };
 }
 
+function extractMatchingQuestion(omvElement, index) {
+  let questionText = "Question text not found";
+  let categories = [];
+  let options = [];
+  let questionTextElement = null;
+
+  try {
+    if (!omvElement || !omvElement.shadowRoot) {
+      return { questionText: "Error: object-matching-view shadowRoot missing.", categories, options, questionTextElement };
+    }
+    const sr = omvElement.shadowRoot;
+
+    const baseView = sr.querySelector('base-view[type="component"]');
+    if (baseView && baseView.shadowRoot) {
+      questionTextElement =
+        baseView.shadowRoot.querySelector("div.component__body-inner") ||
+        baseView.shadowRoot.querySelector(".objectMatching__prompt") ||
+        baseView.shadowRoot.querySelector(".prompt");
+      if (questionTextElement) questionText = questionTextElement.innerText.trim();
+    }
+    if (!questionTextElement) {
+      questionTextElement =
+        sr.querySelector(".objectMatching__title") ||
+        sr.querySelector(".component__title") ||
+        sr.querySelector(".objectMatching__widget");
+      if (questionTextElement && questionText === "Question text not found") {
+        const t = questionTextElement.innerText.trim();
+        if (t) questionText = t.split("\n")[0];
+      }
+    }
+
+    sr.querySelectorAll(".objectMatching-category-item").forEach((btn) => {
+      const dataId = btn.dataset.id;
+      const text = btn.querySelector(".category-item-text")?.innerText.trim() || "";
+      const letter = btn.querySelector(".category-item-number")?.innerText.trim() || "";
+      categories.push({ dataId, text, letter });
+    });
+
+    sr.querySelectorAll(".objectMatching-option-item").forEach((btn) => {
+      const dataId = btn.dataset.id;
+      const text = btn.innerText.trim();
+      options.push({ dataId, text });
+    });
+  } catch (e) {
+    console.error(`NetAcad UI: Error extracting matching Q ${index + 1}:`, e);
+    questionText = "Error extracting matching data. Check console.";
+  }
+  return { questionText, categories, options, questionTextElement };
+}
+
 function processAnswerElements(answerElements, index) {
   let answerTexts = [];
   if (answerElements.length > 0) {
@@ -578,11 +628,32 @@ async function processSingleQuestion(mcqViewElement, index, apiKey, preFetchedAi
 
   const { uiContainer, aiAnswerDisplay, refreshButton } = createAiAssistantUI(uiContainerId, index);
 
-  // --- 2. Extract Question and Answers ---
-  let { questionText, answerElements, questionTextElement } = extractQuestionAndAnswers(mcqViewElement, index);
-  
-  // --- 3. Process Answer Elements & Update UI based on extraction ---
-  let answerTexts = processAnswerElements(answerElements, index);
+  // --- 2. Extract Question and Answers (dispatch by element type) ---
+  const isMatching = mcqViewElement && mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view";
+  let questionText, answerElements, questionTextElement, answerTexts;
+
+  if (isMatching) {
+    const m = extractMatchingQuestion(mcqViewElement, index);
+    questionText = m.questionText;
+    questionTextElement = m.questionTextElement;
+    answerTexts = [
+      ...m.categories.map((c) => `[CATEGORY ${c.letter}] ${c.text}`),
+      ...m.options.map((o, i) => `[OPTION ${i + 1}] ${o.text}`),
+    ];
+    answerElements = [];
+    if (questionText && !questionText.startsWith("Error") && m.categories.length && m.options.length) {
+      questionText = `MATCHING QUESTION. ${questionText}\nCategories: ${m.categories
+        .map((c) => `${c.letter}=${c.text}`)
+        .join(" | ")}\nOptions: ${m.options.map((o, i) => `${i + 1}=${o.text}`).join(" | ")}\nReturn answer as 'A: <option text> /// B: <option text> /// ...' in category order.`;
+    }
+  } else {
+    const ex = extractQuestionAndAnswers(mcqViewElement, index);
+    questionText = ex.questionText;
+    answerElements = ex.answerElements;
+    questionTextElement = ex.questionTextElement;
+    answerTexts = processAnswerElements(answerElements, index);
+  }
+
   updateUiAndLogsPostExtraction(aiAnswerDisplay, questionText, answerTexts, index);
 
   // --- 4. UI Injection Logic ---

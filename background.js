@@ -34,3 +34,32 @@ chrome.commands.onCommand.addListener((command) => {
     });
   }
 });
+
+// Floating-button broadcast: top-frame content script asks background to fan
+// the processPage message out to every frame in the same tab (since app-root
+// lives in an iframe, not the top frame).
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request && request.action === "broadcastProcessPage") {
+    const tabId = sender.tab && sender.tab.id;
+    if (!tabId) {
+      sendResponse({ success: false, error: "no tab id" });
+      return false;
+    }
+    chrome.storage.sync.get(["showAnswers"], (result) => {
+      const showAnswers =
+        typeof result.showAnswers === "boolean" ? result.showAnswers : true;
+      chrome.tabs.sendMessage(
+        tabId,
+        { action: "processPage", showAnswers },
+        () => {
+          // Suppress lastError for frames without listeners.
+          void chrome.runtime.lastError;
+        },
+      );
+      sendResponse({ success: true });
+    });
+    return true; // async response
+  }
+  return false;
+});
+

@@ -27,11 +27,13 @@ async function scrapeData(currentAttempt = 1) {
                 if (blockView.shadowRoot) {
                   const mcqView = blockView.shadowRoot.querySelector("mcq-view");
                   if (mcqView) mcqViewElements.push(mcqView);
+                  const omv = blockView.shadowRoot.querySelector("object-matching-view");
+                  if (omv) mcqViewElements.push(omv);
                 }
               });
             }
           });
-          if (mcqViewElements.length === 0) earlyExitReason = "Found article-view(s) but no mcq-view elements.";
+          if (mcqViewElements.length === 0) earlyExitReason = "Found article-view(s) but no mcq-view or object-matching-view elements.";
         } else earlyExitReason = "page-view found, but no article-view elements.";
       } else earlyExitReason = appRoot.shadowRoot.querySelector("page-view") ? "page-view found, but no shadowRoot." : "page-view not found in app-root.";
     } else earlyExitReason = document.querySelector("app-root") ? "app-root found, but no shadowRoot." : "app-root not found.";
@@ -79,6 +81,37 @@ async function scrapeData(currentAttempt = 1) {
 
   const allQuestionsData = [];
   for (const [index, mcqViewElement] of mcqViewElements.entries()) {
+    const isMatching = mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view";
+
+    if (isMatching) {
+      if (typeof extractMatchingQuestion !== "function") {
+        console.error("NetAcad Scraper: extractMatchingQuestion missing!");
+        await processSingleQuestion(mcqViewElement, index, apiKey, "Error: Core UI function (matching extract) missing.");
+        continue;
+      }
+      const m = extractMatchingQuestion(mcqViewElement, index);
+      if (m.questionText && !m.questionText.startsWith("Error") && m.categories.length > 0 && m.options.length > 0) {
+        const formattedQuestion = `MATCHING QUESTION. ${m.questionText}\nCategories: ${m.categories
+          .map((c) => `${c.letter}=${c.text}`)
+          .join(" | ")}\nOptions: ${m.options.map((o, i) => `${i + 1}=${o.text}`).join(" | ")}\nReturn answer as 'A: <option text> /// B: <option text> /// ...' in category order, using the EXACT option texts.`;
+        const answerTexts = [
+          ...m.categories.map((c) => `[CATEGORY ${c.letter}] ${c.text}`),
+          ...m.options.map((o, i) => `[OPTION ${i + 1}] ${o.text}`),
+        ];
+        allQuestionsData.push({
+          question: formattedQuestion,
+          answers: answerTexts,
+          mcqViewElement: mcqViewElement,
+          originalIndex: index,
+          questionTextElement: m.questionTextElement,
+        });
+      } else {
+        console.warn(`NetAcad Scraper: Failed to extract matching Q ${index + 1}.`);
+        await processSingleQuestion(mcqViewElement, index, apiKey, m.questionText);
+      }
+      continue;
+    }
+
     // extractQuestionAndAnswers is in ui.js and should be globally available.
     // It returns { questionText, answerElements, questionTextElement }
     if (typeof extractQuestionAndAnswers !== 'function') {

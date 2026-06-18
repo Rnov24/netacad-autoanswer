@@ -1,9 +1,21 @@
-const GEMINI_MODEL = "gemini-2.5-flash";
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+function buildGeminiUrl(model) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
+
+async function getProviderConfig() {
+  const stored = await chrome.storage.sync.get(["geminiApiKey", "geminiModel"]);
+  return {
+    apiKey: stored.geminiApiKey || "",
+    model: stored.geminiModel || DEFAULT_GEMINI_MODEL,
+  };
+}
 
 async function getAiAnswer(question, answers, apiKey) {
-  if (!apiKey) {
-    console.error("Error: Gemini API Key not provided to getAiAnswer.");
+  const cfg = await getProviderConfig();
+  const effectiveKey = apiKey || cfg.apiKey;
+  if (!effectiveKey) {
     return "Error: Gemini API Key not available. Please set it in the extension popup.";
   }
 
@@ -22,168 +34,115 @@ Possible Answers:
   });
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(buildGeminiUrl(cfg.model), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
+        "x-goog-api-key": effectiveKey,
       },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-      }),
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       console.error("Gemini API Error:", errorData);
-      return `Error calling Gemini API: ${response.status} ${response.statusText}. Check console. Key might be invalid or quota exceeded.`;
+      return `Error calling Gemini API: ${response.status} ${response.statusText}.`;
     }
-
     const data = await response.json();
-    if (
-      data.candidates &&
-      data.candidates.length > 0 &&
-      data.candidates[0].content &&
-      data.candidates[0].content.parts &&
-      data.candidates[0].content.parts.length > 0
-    ) {
-      return data.candidates[0].content.parts[0].text.trim();
-    } else {
-      console.error("Unexpected response structure from Gemini API:", data);
-      return "Error: Could not extract answer from Gemini response structure.";
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      console.error("Unexpected Gemini response:", data);
+      return "Error: Could not extract answer from Gemini response.";
     }
+    return text.trim();
   } catch (error) {
     console.error("Error fetching from Gemini API:", error);
-    return "Error connecting to Gemini API. Check console for details.";
+    return "Error connecting to Gemini API. Check console.";
   }
 }
 
-async function getAiAnswersForBatch(questionsDataArray, apiKey) {
-  if (!apiKey) {
-    console.error(
-      "Error: Gemini API Key not provided to getAiAnswersForBatch.",
-    );
-    return {
-      error:
-        "Error: Gemini API Key not available. Please set it in the extension popup.",
-    };
-  }
-  if (!questionsDataArray || questionsDataArray.length === 0) {
-    console.debug("getAiAnswersForBatch: No questions provided.");
-    return { answers: [] };
-  }
-
+function buildBatchPrompt(questionsDataArray) {
   let prompt =
-    "You will be provided with a JSON array of multiple-choice questions. For each question, choose the best answer(s) from its 'Possible Answers'.\n";
+    "You will be provided with a JSON array of questions. Most are multiple-choice; some are MATCHING questions (their text starts with 'MATCHING QUESTION.').\n";
   prompt +=
-    "If a question implies multiple correct answers (e.g., 'select all that apply', 'choose N correct options'), include all correct answer texts for that question concatenated into a single string, separated by ' /// ' (space, three forward slashes, space). Example: 'Answer A /// Answer C'.\n";
+    "For multiple-choice: choose the best answer(s) from 'possible_answers'. If 'select all that apply' / 'choose N', concatenate all correct answer texts separated by ' /// ' (space, three slashes, space). Otherwise return single answer text.\n";
   prompt +=
-    "Otherwise, if it's a single-choice question, return just the single best answer text as the string for that question.\n";
+    "For MATCHING questions: read the embedded Categories and Options. Return the answer as 'A: <option text> /// B: <option text> /// ...' in CATEGORY ORDER (A, B, C, D, ...), using the EXACT option text from the question.\n";
   prompt +=
-    "Return a single JSON array of strings, where each string is the processed answer for the corresponding question in the input array. Do not add any extra explanation or leading/trailing text.\n";
+    "Return a single JSON array of strings, one per input question, in input order. No extra explanation, no leading/trailing text.\n";
   prompt +=
-    'For example, if the input is two questions (Q1 single-choice, Q2 multi-choice requiring two answers), your output should be a JSON array like: ["Text of answer for Q1", "Text of answer A for Q2 /// Text of answer B for Q2"].\n\n';
+    'Example output: ["Text of MCQ answer", "Answer A /// Answer C", "A: option text for A /// B: option text for B /// C: option text for C /// D: option text for D"].\n\n';
   prompt += "Here are the questions:\n```json\n";
-
   const questionsForPrompt = questionsDataArray.map((q, index) => ({
     id: `question_${index + 1}`,
     question_text: q.question,
     possible_answers: q.answers,
   }));
-
   prompt += JSON.stringify(questionsForPrompt, null, 2);
   prompt += "\n```";
+  return prompt;
+}
+
+function parseBatchAnswers(rawText, expectedCount) {
+  let txt = rawText.trim();
+  const fence = txt.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  if (fence) txt = fence[1];
+  let parsed;
+  try {
+    parsed = JSON.parse(txt);
+  } catch (e) {
+    return { error: "Error: Could not parse AI response for batch. Raw: " + rawText };
+  }
+  if (!Array.isArray(parsed) || !parsed.every((x) => typeof x === "string")) {
+    return { error: "Error: AI response was not a valid JSON array of answer strings." };
+  }
+  if (parsed.length !== expectedCount) {
+    return { error: "Error: Mismatch in number of answers from AI.", answers: parsed };
+  }
+  return { answers: parsed };
+}
+
+async function getAiAnswersForBatch(questionsDataArray, apiKey) {
+  const cfg = await getProviderConfig();
+  const effectiveKey = apiKey || cfg.apiKey;
+  if (!effectiveKey) {
+    return { error: "Error: Gemini API Key not available. Please set it in the extension popup." };
+  }
+  if (!questionsDataArray || questionsDataArray.length === 0) {
+    return { answers: [] };
+  }
+
+  const prompt = buildBatchPrompt(questionsDataArray);
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(buildGeminiUrl(cfg.model), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
+        "x-goog-api-key": effectiveKey,
       },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
+        generationConfig: { responseMimeType: "application/json" },
       }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Gemini API Batch Error (response.ok false):", errorData);
+      const errorData = await response.json().catch(() => ({}));
+      console.error("Gemini Batch Error:", errorData);
       return {
-        error: `Error calling Gemini API: ${response.status} ${
-          response.statusText
-        }. Details: ${JSON.stringify(errorData)}`,
+        error: `Error calling Gemini API: ${response.status} ${response.statusText}. Details: ${JSON.stringify(errorData)}`,
       };
     }
-
     const data = await response.json();
-
-    if (
-      data.candidates &&
-      data.candidates.length > 0 &&
-      data.candidates[0].content &&
-      data.candidates[0].content.parts &&
-      data.candidates[0].content.parts.length > 0
-    ) {
-      const rawResponseText = data.candidates[0].content.parts[0].text;
-      console.debug("Gemini API Batch Raw Response Text:", rawResponseText);
-      try {
-        const parsedAnswers = JSON.parse(rawResponseText);
-        if (
-          Array.isArray(parsedAnswers) &&
-          parsedAnswers.every((ans) => typeof ans === "string")
-        ) {
-          if (parsedAnswers.length === questionsDataArray.length) {
-            return { answers: parsedAnswers };
-          } else {
-            console.error(
-              "Gemini API Batch Error: Number of answers received does not match number of questions sent.",
-              parsedAnswers,
-            );
-            return {
-              error: "Error: Mismatch in number of answers from AI.",
-              answers: parsedAnswers,
-            };
-          }
-        } else {
-          console.error(
-            "Gemini API Batch Error: Response is not a JSON array of strings.",
-            parsedAnswers,
-          );
-          return {
-            error:
-              "Error: AI response was not a valid JSON array of answer strings.",
-          };
-        }
-      } catch (e) {
-        console.error(
-          "Gemini API Batch Error: Failed to parse AI response as JSON.",
-          rawResponseText,
-          e,
-        );
-        return {
-          error:
-            "Error: Could not parse AI response for batch. Raw: " +
-            rawResponseText,
-        };
-      }
-    } else {
-      console.error(
-        "Unexpected response structure from Gemini API for batch:",
-        data,
-      );
-      return {
-        error:
-          "Error: Could not extract answers from Gemini batch response structure.",
-      };
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      console.error("Unexpected Gemini batch response:", data);
+      return { error: "Error: Could not extract answers from Gemini batch response." };
     }
+    return parseBatchAnswers(text, questionsDataArray.length);
   } catch (error) {
-    console.error("Error fetching from Gemini API for batch:", error);
-    return {
-      error: "Error connecting to Gemini API for batch. Check console.",
-    };
+    console.error("Error fetching from Gemini batch API:", error);
+    return { error: "Error connecting to Gemini API for batch. Check console." };
   }
 }

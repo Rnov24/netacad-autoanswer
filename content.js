@@ -1,5 +1,177 @@
 console.log("NetAcad Scraper content script loaded and ready.");
 
+const FLOATING_BTN_ID = "netacad-ai-floating-process-btn";
+
+function injectFloatingButton() {
+  if (window.top !== window) return; // top frame only
+  if (document.getElementById(FLOATING_BTN_ID)) return;
+  if (!document.body) {
+    document.addEventListener("DOMContentLoaded", injectFloatingButton, { once: true });
+    return;
+  }
+
+  const btn = document.createElement("button");
+  btn.id = FLOATING_BTN_ID;
+  btn.type = "button";
+  btn.textContent = "AI";
+  btn.title = "Process Questions on this Page (drag to move)";
+  Object.assign(btn.style, {
+    position: "fixed",
+    left: "10px",
+    top: "50%",
+    zIndex: "2147483647",
+    width: "36px",
+    height: "36px",
+    padding: "0",
+    fontSize: "12px",
+    fontWeight: "600",
+    color: "#fff",
+    backgroundColor: "#007bff",
+    border: "none",
+    borderRadius: "50%",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
+    cursor: "grab",
+    fontFamily: "Arial, sans-serif",
+    transition: "background-color 0.15s, box-shadow 0.15s",
+    lineHeight: "36px",
+    textAlign: "center",
+    userSelect: "none",
+    touchAction: "none",
+  });
+  btn.addEventListener("mouseover", () => (btn.style.backgroundColor = "#0056b3"));
+  btn.addEventListener("mouseout", () => (btn.style.backgroundColor = "#007bff"));
+
+  // --- Drag state ---
+  const DRAG_THRESHOLD_PX = 4;
+  let dragState = null; // { startX, startY, offsetX, offsetY, moved }
+  let suppressNextClick = false;
+
+  function clampToViewport(x, y) {
+    const w = btn.offsetWidth;
+    const h = btn.offsetHeight;
+    const maxX = Math.max(0, window.innerWidth - w);
+    const maxY = Math.max(0, window.innerHeight - h);
+    return [Math.min(Math.max(0, x), maxX), Math.min(Math.max(0, y), maxY)];
+  }
+
+  function applyPosition(x, y) {
+    const [cx, cy] = clampToViewport(x, y);
+    btn.style.left = cx + "px";
+    btn.style.top = cy + "px";
+    btn.style.right = "auto";
+    btn.style.bottom = "auto";
+  }
+
+  // Restore saved position
+  chrome.storage.sync.get(["floatingBtnPos"], (res) => {
+    const p = res.floatingBtnPos;
+    if (p && typeof p.x === "number" && typeof p.y === "number") {
+      applyPosition(p.x, p.y);
+    } else {
+      // First load: use computed center-left default
+      applyPosition(10, Math.round(window.innerHeight / 2 - 18));
+    }
+  });
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    btn.setPointerCapture && e.pointerId != null && btn.setPointerCapture(e.pointerId);
+    const rect = btn.getBoundingClientRect();
+    dragState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      moved: false,
+    };
+    btn.style.cursor = "grabbing";
+    btn.style.transition = "background-color 0.15s";
+  }
+
+  function onPointerMove(e) {
+    if (!dragState) return;
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    if (!dragState.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    dragState.moved = true;
+    applyPosition(e.clientX - dragState.offsetX, e.clientY - dragState.offsetY);
+    e.preventDefault();
+  }
+
+  function onPointerUp(e) {
+    if (!dragState) return;
+    btn.style.cursor = "grab";
+    if (dragState.moved) {
+      suppressNextClick = true;
+      const rect = btn.getBoundingClientRect();
+      chrome.storage.sync.set({
+        floatingBtnPos: { x: rect.left, y: rect.top },
+      });
+    }
+    dragState = null;
+  }
+
+  btn.addEventListener("pointerdown", onPointerDown);
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp);
+  window.addEventListener("pointercancel", onPointerUp);
+
+  // Re-clamp on resize
+  window.addEventListener("resize", () => {
+    const rect = btn.getBoundingClientRect();
+    applyPosition(rect.left, rect.top);
+  });
+
+  btn.addEventListener("click", async (ev) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "...";
+    try {
+      const stored = await chrome.storage.sync.get(["geminiApiKey"]);
+      const key = stored.geminiApiKey;
+      if (!key) {
+        btn.textContent = "!";
+        btn.title = "Set API Key in popup";
+        setTimeout(() => {
+          btn.textContent = original;
+          btn.title = "Process Questions on this Page";
+        }, 2500);
+        return;
+      }
+
+      // Top frame may not contain app-root (it's in iframe). Try local first, then broadcast.
+      if (typeof window.scrapeData === "function" && document.querySelector("app-root")) {
+        await window.scrapeData();
+      } else {
+        // Forward to all frames via runtime message — content scripts in iframes will handle it
+        chrome.runtime.sendMessage({ action: "broadcastProcessPage" }, () => {
+          if (chrome.runtime.lastError) {
+            console.debug("NetAcad Scraper: broadcast send error", chrome.runtime.lastError.message);
+          }
+        });
+      }
+      btn.textContent = "✓";
+    } catch (e) {
+      console.error("NetAcad Scraper: floating button error", e);
+      btn.textContent = "✗";
+    } finally {
+      setTimeout(() => {
+        btn.textContent = original;
+        btn.disabled = false;
+      }, 1500);
+    }
+  });
+
+  document.body.appendChild(btn);
+  console.debug("NetAcad Scraper: floating button injected.");
+}
+
 let debounceTimeout;
 function debouncedScrape() {
   clearTimeout(debounceTimeout);
@@ -117,6 +289,7 @@ const autoRunScraper = async () => {
 };
 
 autoRunScraper();
+injectFloatingButton();
 
 // Listener for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

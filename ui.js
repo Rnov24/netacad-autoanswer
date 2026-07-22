@@ -666,7 +666,7 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
     if (!sr) return;
 
     const isMatching = (mcqViewElement && mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view") ||
-                       (answerText && /^A:\s+.*///\s+B:/i.test(answerText));
+                       (answerText && answerText.includes(" /// ") && /^A:\s+/i.test(answerText.trim()));
 
     if (isMatching) {
       console.log("NetAcad UI: Object-matching question detected — suggesting answer in UI panel without auto-filling.");

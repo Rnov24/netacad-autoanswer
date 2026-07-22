@@ -1,148 +1,409 @@
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+// Multi-Provider AI Engine for NetAcad AutoAnswer (Structured Output & Question Type Analysis)
 
-function buildGeminiUrl(model) {
-  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+function getProviderConfig() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(
+      [
+        "aiProvider",
+        "geminiApiKey", "geminiModel",
+        "groqApiKey", "groqModel",
+        "openaiApiKey", "openaiModel",
+        "anthropicApiKey", "anthropicModel",
+        "openrouterApiKey", "openrouterModel",
+      ],
+      (res) => {
+        const provider = res.aiProvider || "gemini";
+        const keyField = `${provider}ApiKey`;
+        const modelField = `${provider}Model`;
+
+        const defaults = {
+          gemini: "gemini-1.5-flash",
+          groq: "llama-3.3-70b-versatile",
+          openai: "gpt-4o-mini",
+          anthropic: "claude-3-5-haiku-latest",
+          openrouter: "openai/gpt-4o-mini",
+        };
+
+        resolve({
+          provider,
+          apiKey: res[keyField] || "",
+          model: res[modelField] || defaults[provider] || "",
+        });
+      }
+    );
+  });
 }
 
-async function getProviderConfig() {
-  const stored = await chrome.storage.sync.get(["geminiApiKey", "geminiModel"]);
-  return {
-    apiKey: stored.geminiApiKey || "",
-    model: stored.geminiModel || DEFAULT_GEMINI_MODEL,
-  };
-}
-
-async function getAiAnswer(question, answers, apiKey) {
-  const cfg = await getProviderConfig();
-  const effectiveKey = apiKey || cfg.apiKey;
-  if (!effectiveKey) {
-    return "Error: Gemini API Key not available. Please set it in the extension popup.";
-  }
-
-  let prompt = `Given the following multiple-choice question and its possible answers, please choose the best answer(s).
-If the question implies multiple correct answers (e.g., 'select all that apply', 'choose N correct options'), return ALL chosen answer texts, each on a new line.
-Otherwise, if it's a single-choice question, return only the text of the single best chosen answer option.
-Do not add any extra explanation or leading text like "The best answer is: ".
+function buildSinglePrompt(question, answers) {
+  const isMatching = question.toLowerCase().includes("matching question") || question.toLowerCase().includes("order");
+  return `You are a Cisco CCNA networking expert. Analyze the question type and determine the correct answer.
 
 Question:
 ${question}
 
-Possible Answers:
-`;
-  answers.forEach((ans, i) => {
-    prompt += `${i + 1}. ${ans}\n`;
+Options / Available items:
+${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}
+
+INSTRUCTIONS:
+1. Analyze and classify the question type into "type":
+   - "MCQ_SINGLE" (single choice multiple-choice question)
+   - "MCQ_MULTIPLE" (multiple select question)
+   - "OBJECT_MATCHING" (matching/connecting category circles A, B, C... to option items)
+   - "FILL_IN_BLANK" (text input question)
+
+2. Determine the correct answer(s) into "answer":
+   - For MCQ_SINGLE: exact option text.
+   - For MCQ_MULTIPLE: exact option texts separated by ' /// '.
+   - For OBJECT_MATCHING: 'A: <exact text> /// B: <exact text> /// C: <exact text>'. Use exact text from options list without paraphrasing.
+
+3. Output your answer in structured JSON format with keys "type" and "answer":
+{
+  "type": "${isMatching ? "OBJECT_MATCHING" : "MCQ_SINGLE"}",
+  "answer": "exact answer string"
+}
+Return ONLY valid JSON.`;
+}
+
+function buildBatchPrompt(questionsWithAnswers) {
+  const formattedQuestions = questionsWithAnswers
+    .map((q, idx) => {
+      const isMatching = q.question.toLowerCase().includes("matching question") || q.question.toLowerCase().includes("order");
+      return `[QUESTION ${idx + 1}] ${isMatching ? "(TYPE: OBJECT_MATCHING)" : ""}
+${q.question}
+Options / Items:
+${q.answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
+    })
+    .join("\n\n");
+
+  return `You are a Cisco CCNA networking expert answering quiz questions.
+
+For each question below:
+1. Analyze the question type ("MCQ_SINGLE", "MCQ_MULTIPLE", "OBJECT_MATCHING", or "FILL_IN_BLANK").
+2. Determine the correct answer.
+
+${formattedQuestions}
+
+CRITICAL INSTRUCTIONS:
+- Return a JSON object containing key "results" with an array of objects for each question in exact order:
+{
+  "results": [
+    {
+      "type": "MCQ_SINGLE",
+      "answer": "answer for question 1"
+    },
+    {
+      "type": "OBJECT_MATCHING",
+      "answer": "A: text /// B: text"
+    }
+  ]
+}
+- For normal MCQ: return exact option text. If multiple apply, separate with ' /// '.
+- For OBJECT_MATCHING: output ALL pairs on one line: 'A: <exact option text> /// B: <exact option text>'. Use exact text from items list.
+- Return ONLY valid JSON object with no extra text outside JSON.`;
+}
+
+// Robust JSON Extractor & Sanitizer
+function safeParseJsonResponse(rawText) {
+  if (!rawText || typeof rawText !== "string") {
+    throw new Error("Empty response received from AI provider.");
+  }
+
+  let clean = rawText.trim();
+  if (clean.includes("```")) {
+    clean = clean.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
+  }
+
+  const firstBrace = clean.indexOf("{");
+  const lastBrace = clean.lastIndexOf("}");
+  const firstBracket = clean.indexOf("[");
+  const lastBracket = clean.lastIndexOf("]");
+
+  let jsonStr = clean;
+  if (firstBrace !== -1 && lastBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    jsonStr = clean.slice(firstBrace, lastBrace + 1);
+  } else if (firstBracket !== -1 && lastBracket !== -1) {
+    jsonStr = clean.slice(firstBracket, lastBracket + 1);
+  }
+
+  try {
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error("NetAcad API Engine: Failed to parse JSON response:", rawText);
+    throw new Error(`Invalid JSON output from AI provider: ${err.message}`);
+  }
+}
+
+// --- Provider Implementations with Structured Output (JSON mode) ---
+
+async function callGeminiApi(prompt, apiKey, modelName, useJsonMode = false) {
+  const model = modelName || "gemini-1.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+  };
+
+  if (useJsonMode) {
+    payload.generationConfig = { responseMimeType: "application/json" };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 
-  try {
-    const response = await fetch(buildGeminiUrl(cfg.model), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": effectiveKey,
-      },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error("Gemini API Error:", errorData);
-      return `Error calling Gemini API: ${response.status} ${response.statusText}.`;
-    }
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      console.error("Unexpected Gemini response:", data);
-      return "Error: Could not extract answer from Gemini response.";
-    }
-    return text.trim();
-  } catch (error) {
-    console.error("Error fetching from Gemini API:", error);
-    return "Error connecting to Gemini API. Check console.";
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error (${response.status}): ${errorText}`);
   }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Invalid response format from Gemini API.");
+  return text.trim();
 }
 
-function buildBatchPrompt(questionsDataArray) {
-  let prompt =
-    "You will be provided with a JSON array of questions. Most are multiple-choice; some are MATCHING questions (their text starts with 'MATCHING QUESTION.').\n";
-  prompt +=
-    "For multiple-choice: choose the best answer(s) from 'possible_answers'. If 'select all that apply' / 'choose N', concatenate all correct answer texts separated by ' /// ' (space, three slashes, space). Otherwise return single answer text.\n";
-  prompt +=
-    "For MATCHING questions: read the embedded Categories and Options. Return the answer as 'A: <option text> /// B: <option text> /// ...' in CATEGORY ORDER (A, B, C, D, ...), using the EXACT option text from the question.\n";
-  prompt +=
-    "Return a single JSON array of strings, one per input question, in input order. No extra explanation, no leading/trailing text.\n";
-  prompt +=
-    'Example output: ["Text of MCQ answer", "Answer A /// Answer C", "A: option text for A /// B: option text for B /// C: option text for C /// D: option text for D"].\n\n';
-  prompt += "Here are the questions:\n```json\n";
-  const questionsForPrompt = questionsDataArray.map((q, index) => ({
-    id: `question_${index + 1}`,
-    question_text: q.question,
-    possible_answers: q.answers,
-  }));
-  prompt += JSON.stringify(questionsForPrompt, null, 2);
-  prompt += "\n```";
-  return prompt;
+async function callGroqApi(prompt, apiKey, modelName, useJsonMode = false) {
+  const model = modelName || "llama-3.3-70b-versatile";
+  const url = "https://api.groq.com/openai/v1/chat/completions";
+
+  const payload = {
+    model: model,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.1,
+  };
+
+  if (useJsonMode) {
+    payload.response_format = { type: "json_object" };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Groq API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Invalid response format from Groq API.");
+  return text.trim();
 }
 
-function parseBatchAnswers(rawText, expectedCount) {
-  let txt = rawText.trim();
-  const fence = txt.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  if (fence) txt = fence[1];
-  let parsed;
-  try {
-    parsed = JSON.parse(txt);
-  } catch (e) {
-    return { error: "Error: Could not parse AI response for batch. Raw: " + rawText };
+async function callOpenAiApi(prompt, apiKey, modelName, useJsonMode = false) {
+  const model = modelName || "gpt-4o-mini";
+  const url = "https://api.openai.com/v1/chat/completions";
+
+  const payload = {
+    model: model,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.1,
+  };
+
+  if (useJsonMode) {
+    payload.response_format = { type: "json_object" };
   }
-  if (!Array.isArray(parsed) || !parsed.every((x) => typeof x === "string")) {
-    return { error: "Error: AI response was not a valid JSON array of answer strings." };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
   }
-  if (parsed.length !== expectedCount) {
-    return { error: "Error: Mismatch in number of answers from AI.", answers: parsed };
-  }
-  return { answers: parsed };
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Invalid response format from OpenAI API.");
+  return text.trim();
 }
 
-async function getAiAnswersForBatch(questionsDataArray, apiKey) {
+async function callAnthropicApi(prompt, apiKey, modelName, useJsonMode = false) {
+  const model = modelName || "claude-3-5-haiku-latest";
+  const url = "https://api.anthropic.com/v1/messages";
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Anthropic API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text;
+  if (!text) throw new Error("Invalid response format from Anthropic API.");
+  return text.trim();
+}
+
+async function callOpenRouterApi(prompt, apiKey, modelName, useJsonMode = false) {
+  const model = modelName || "openai/gpt-4o-mini";
+  const url = "https://openrouter.ai/api/v1/chat/completions";
+
+  const payload = {
+    model: model,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.1,
+  };
+
+  if (useJsonMode) {
+    payload.response_format = { type: "json_object" };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://netacad.com",
+      "X-Title": "NetAcad AutoAnswer",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Invalid response format from OpenRouter API.");
+  return text.trim();
+}
+
+async function queryAiProvider(prompt, overrideApiKey = null, useJsonMode = false) {
   const cfg = await getProviderConfig();
-  const effectiveKey = apiKey || cfg.apiKey;
-  if (!effectiveKey) {
-    return { error: "Error: Gemini API Key not available. Please set it in the extension popup." };
-  }
-  if (!questionsDataArray || questionsDataArray.length === 0) {
-    return { answers: [] };
+  const apiKey = overrideApiKey || cfg.apiKey;
+  const provider = cfg.provider;
+  const model = cfg.model;
+
+  if (!apiKey) {
+    throw new Error(`API Key for ${provider} is missing. Please set it in extension popup.`);
   }
 
-  const prompt = buildBatchPrompt(questionsDataArray);
+  switch (provider) {
+    case "groq":
+      return await callGroqApi(prompt, apiKey, model, useJsonMode);
+    case "openai":
+      return await callOpenAiApi(prompt, apiKey, model, useJsonMode);
+    case "anthropic":
+      return await callAnthropicApi(prompt, apiKey, model, useJsonMode);
+    case "openrouter":
+      return await callOpenRouterApi(prompt, apiKey, model, useJsonMode);
+    case "gemini":
+    default:
+      return await callGeminiApi(prompt, apiKey, model, useJsonMode);
+  }
+}
 
+async function getAiAnswer(questionText, answerTexts, overrideApiKey = null) {
   try {
-    const response = await fetch(buildGeminiUrl(cfg.model), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": effectiveKey,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" },
-      }),
+    const prompt = buildSinglePrompt(questionText, answerTexts);
+    const rawResponse = await queryAiProvider(prompt, overrideApiKey, true);
+
+    try {
+      const parsed = safeParseJsonResponse(rawResponse);
+      if (parsed && typeof parsed === "object") {
+        if (parsed.type) {
+          console.debug(`NetAcad AI Engine: Analyzed Question Type "${parsed.type}"`);
+        }
+        if (typeof parsed.answer === "string") {
+          return parsed.answer.trim();
+        }
+      }
+      if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "string") {
+        return parsed[0].trim();
+      }
+    } catch (_) {
+      return rawResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+    }
+    return rawResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+  } catch (error) {
+    console.error("NetAcad API Engine: Single question error:", error);
+    return `Error calling AI API: ${error.message}`;
+  }
+}
+
+async function getAiAnswersForBatch(questionsWithAnswers, overrideApiKey = null) {
+  try {
+    const prompt = buildBatchPrompt(questionsWithAnswers);
+    const rawResponseText = await queryAiProvider(prompt, overrideApiKey, true);
+
+    const parsed = safeParseJsonResponse(rawResponseText);
+    let items = [];
+
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    } else if (parsed && Array.isArray(parsed.results)) {
+      items = parsed.results;
+    } else if (parsed && Array.isArray(parsed.answers)) {
+      items = parsed.answers;
+    } else {
+      throw new Error("AI response did not contain a valid results/answers array.");
+    }
+
+    const answersArray = items.map((item) => {
+      if (item && typeof item === "object") {
+        if (item.type) {
+          console.debug(`NetAcad AI Engine: Analyzed Question Type "${item.type}"`);
+        }
+        if (typeof item.answer === "string") return item.answer.trim();
+      }
+      if (typeof item === "string") return item.trim();
+      return String(item || "");
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error("Gemini Batch Error:", errorData);
-      return {
-        error: `Error calling Gemini API: ${response.status} ${response.statusText}. Details: ${JSON.stringify(errorData)}`,
-      };
+    // Validate length matches — pad with error string if AI returned fewer answers
+    while (answersArray.length < questionsWithAnswers.length) {
+      answersArray.push("Error: AI did not return an answer for this question.");
     }
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      console.error("Unexpected Gemini batch response:", data);
-      return { error: "Error: Could not extract answers from Gemini batch response." };
-    }
-    return parseBatchAnswers(text, questionsDataArray.length);
+
+    return { answers: answersArray };
   } catch (error) {
-    console.error("Error fetching from Gemini batch API:", error);
-    return { error: "Error connecting to Gemini API for batch. Check console." };
+    console.error("NetAcad API Engine: Batch question error:", error);
+    return { error: `Error calling AI API: ${error.message}` };
   }
+}
+
+const apiExports = {
+  getProviderConfig,
+  getAiAnswer,
+  getAiAnswersForBatch,
+  queryAiProvider,
+  safeParseJsonResponse,
+};
+
+if (typeof window !== "undefined") {
+  Object.assign(window, apiExports);
+}
+
+if (typeof globalThis !== "undefined") {
+  Object.assign(globalThis, apiExports);
 }

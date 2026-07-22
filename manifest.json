@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "NetAcad Scraper",
-  "version": "1.0",
-  "description": "Scrapes questions and answers from NetAcad and uses AI to suggest answers.",
+  "version": "2.0",
+  "description": "Scrapes questions and answers from NetAcad and uses AI to suggest and auto-fill answers.",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "webNavigation"
   ],
   "content_scripts": [
     {

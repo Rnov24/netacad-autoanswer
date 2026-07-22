@@ -1,44 +1,155 @@
+function getShadowRoots(root = document) {
+  const shadowRoots = [];
+  function traverse(node) {
+    if (!node) return;
+    if (node.shadowRoot) {
+      shadowRoots.push(node.shadowRoot);
+      traverse(node.shadowRoot);
+    }
+    const children = node.children || [];
+    for (let i = 0; i < children.length; i++) {
+      traverse(children[i]);
+    }
+  }
+  traverse(root);
+  return shadowRoots;
+}
+
+function buildAnswerNode(labelText, answers) {
+  const wrapper = document.createDocumentFragment();
+  const label = document.createElement("b");
+  label.textContent = labelText;
+  wrapper.appendChild(label);
+
+  if (answers.length === 1) {
+    wrapper.appendChild(document.createTextNode(" " + answers[0]));
+  } else {
+    answers.forEach((ans) => {
+      wrapper.appendChild(document.createElement("br"));
+      wrapper.appendChild(document.createTextNode("- " + ans));
+    });
+  }
+  return wrapper;
+}
+
 function createAiAssistantUI(uiContainerId, index) {
   const uiContainer = document.createElement("div");
   uiContainer.id = uiContainerId;
   uiContainer.className = "netacad-ai-assistant-ui";
-  uiContainer.style.marginTop = "15px";
-  uiContainer.style.padding = "10px";
-  uiContainer.style.border = "1px solid #007bff";
-  uiContainer.style.borderRadius = "5px";
-  uiContainer.style.backgroundColor = "#e7f3ff";
-  uiContainer.style.color = "#333";
+  Object.assign(uiContainer.style, {
+    marginTop: "12px",
+    marginBottom: "12px",
+    padding: "12px 14px",
+    border: "1px solid #3b82f6",
+    borderRadius: "8px",
+    backgroundColor: "#1e293b",
+    color: "#f8fafc",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    fontSize: "13px",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.25)",
+  });
 
-  const titleElement = document.createElement("h5");
+  const headerDiv = document.createElement("div");
+  Object.assign(headerDiv.style, {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: "8px",
+  });
+
+  const titleElement = document.createElement("span");
   titleElement.textContent = "AI Assistant";
-  titleElement.style.marginTop = "0px";
-  titleElement.style.marginBottom = "5px";
-  titleElement.style.color = "#0056b3";
-  uiContainer.appendChild(titleElement);
+  Object.assign(titleElement.style, {
+    fontWeight: "700",
+    color: "#38bdf8",
+    fontSize: "13px",
+  });
 
-  const aiAnswerDisplay = document.createElement("p");
+  const badge = document.createElement("span");
+  badge.className = "ai-status-badge";
+  badge.textContent = "Analyzing...";
+  Object.assign(badge.style, {
+    fontSize: "11px",
+    padding: "2px 8px",
+    borderRadius: "12px",
+    backgroundColor: "rgba(56, 189, 248, 0.15)",
+    color: "#38bdf8",
+    border: "1px solid rgba(56, 189, 248, 0.3)",
+  });
+
+  headerDiv.appendChild(titleElement);
+  headerDiv.appendChild(badge);
+  uiContainer.appendChild(headerDiv);
+
+  const aiAnswerDisplay = document.createElement("div");
   aiAnswerDisplay.className = "ai-answer-display";
-  aiAnswerDisplay.style.margin = "5px 0";
-  aiAnswerDisplay.style.fontStyle = "italic";
+  Object.assign(aiAnswerDisplay.style, {
+    margin: "8px 0",
+    padding: "8px 10px",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    borderRadius: "6px",
+    borderLeft: "3px solid #38bdf8",
+    lineHeight: "1.5",
+    wordBreak: "break-word",
+    color: "#e2e8f0",
+  });
   aiAnswerDisplay.textContent = "Initializing...";
   uiContainer.appendChild(aiAnswerDisplay);
 
+  const btnRow = document.createElement("div");
+  Object.assign(btnRow.style, {
+    display: "flex",
+    gap: "8px",
+    marginTop: "10px",
+  });
+
   const refreshButton = document.createElement("button");
   refreshButton.className = "ai-refresh-button";
-  refreshButton.textContent = "Refresh AI Answer";
-  refreshButton.style.padding = "6px 12px";
-  refreshButton.style.border = "none";
-  refreshButton.style.borderRadius = "4px";
-  refreshButton.style.backgroundColor = "#007bff";
-  refreshButton.style.color = "white";
-  refreshButton.style.cursor = "pointer";
-  refreshButton.onmouseover = () =>
-    (refreshButton.style.backgroundColor = "#0056b3");
-  refreshButton.onmouseout = () =>
-    (refreshButton.style.backgroundColor = "#007bff");
-  uiContainer.appendChild(refreshButton);
+  refreshButton.textContent = "Refresh";
+  Object.assign(refreshButton.style, {
+    padding: "5px 10px",
+    border: "none",
+    borderRadius: "4px",
+    backgroundColor: "#2563eb",
+    color: "white",
+    cursor: "pointer",
+    fontSize: "11px",
+    fontWeight: "600",
+  });
 
-  return { uiContainer, aiAnswerDisplay, refreshButton };
+  const autoSelectButton = document.createElement("button");
+  autoSelectButton.className = "ai-autoselect-button";
+  autoSelectButton.textContent = "Auto-Select";
+  Object.assign(autoSelectButton.style, {
+    padding: "5px 10px",
+    border: "none",
+    borderRadius: "4px",
+    backgroundColor: "#059669",
+    color: "white",
+    cursor: "pointer",
+    fontSize: "11px",
+    fontWeight: "600",
+  });
+
+  const copyButton = document.createElement("button");
+  copyButton.className = "ai-copy-button";
+  copyButton.textContent = "Copy";
+  Object.assign(copyButton.style, {
+    padding: "5px 10px",
+    border: "1px solid #475569",
+    borderRadius: "4px",
+    backgroundColor: "#334155",
+    color: "#cbd5e1",
+    cursor: "pointer",
+    fontSize: "11px",
+  });
+
+  btnRow.appendChild(refreshButton);
+  btnRow.appendChild(autoSelectButton);
+  btnRow.appendChild(copyButton);
+  uiContainer.appendChild(btnRow);
+
+  return { uiContainer, aiAnswerDisplay, refreshButton, autoSelectButton, copyButton, badge };
 }
 
 function extractQuestionAndAnswers(mcqViewElement, index) {
@@ -48,106 +159,37 @@ function extractQuestionAndAnswers(mcqViewElement, index) {
 
   try {
     if (mcqViewElement && mcqViewElement.shadowRoot) {
-      const baseView = mcqViewElement.shadowRoot.querySelector(
-        'base-view[type="component"]'
-      );
-      if (baseView && baseView.shadowRoot) {
-        questionTextElement = baseView.shadowRoot.querySelector(
-          "div.component__body-inner.mcq__body-inner"
-        );
-        if (!questionTextElement) {
-          questionTextElement =
-            baseView.shadowRoot.querySelector(".mcq__prompt");
-        }
-        if (!questionTextElement) {
-          questionTextElement = baseView.shadowRoot.querySelector(".prompt");
-        }
+      const baseView = mcqViewElement.shadowRoot.querySelector('base-view[type="component"]');
+      const root = (baseView && baseView.shadowRoot) ? baseView.shadowRoot : mcqViewElement.shadowRoot;
 
-        if (questionTextElement) {
-          questionText = questionTextElement.innerText.trim();
-        } else {
-          const potentialElements = Array.from(
-            baseView.shadowRoot.querySelectorAll("div, p, span")
-          );
-          for (const el of potentialElements) {
-            const text = el.innerText.trim();
-            if (text.length > 20) {
-              questionText = text;
-              questionTextElement = el;
-              console.debug(
-                `NetAcad UI: Used generic text search in base-view for question ${
-                  index + 1
-                }: ${questionText}. Element: <${el.tagName}>`
-              );
-              break;
-            }
-          }
-          if (!questionTextElement) {
-            console.warn(
-              `NetAcad UI: Question text element not found via specific or generic selectors in base-view for mcq ${
-                index + 1
-              }.`
-            );
-          }
-        }
+      questionTextElement =
+        root.querySelector("div.component__body-inner.mcq__body-inner") ||
+        root.querySelector(".mcq__prompt") ||
+        root.querySelector(".prompt");
+
+      if (questionTextElement) {
+        questionText = questionTextElement.innerText.trim();
       } else {
-        let directQuestionEl = mcqViewElement.shadowRoot.querySelector(
-          "div.component__body-inner.mcq__body-inner"
-        );
-        if (!directQuestionEl) {
-          directQuestionEl =
-            mcqViewElement.shadowRoot.querySelector(".mcq__prompt");
-        }
-        if (!directQuestionEl) {
-          directQuestionEl = mcqViewElement.shadowRoot.querySelector(".prompt");
-        }
-
-        if (directQuestionEl) {
-          questionTextElement = directQuestionEl;
-          questionText = directQuestionEl.innerText.trim();
-        } else {
-          const potentialElements = Array.from(
-            mcqViewElement.shadowRoot.querySelectorAll("div, p, span")
-          );
-          for (const el of potentialElements) {
-            const text = el.innerText.trim();
-            if (text.length > 20) {
-              questionText = text;
-              questionTextElement = el;
-              console.debug(
-                `NetAcad UI: Used generic text search directly in mcq-view shadowRoot for question ${
-                  index + 1
-                }: ${questionText}. Element: <${el.tagName}>`
-              );
-              break;
-            }
-          }
-          if (!questionTextElement) {
-            console.warn(
-              `NetAcad UI: Question text element not found in mcq ${
-                index + 1
-              } (no base-view or text not in mcq-view shadowRoot directly).`
-            );
+        const potentialElements = Array.from(root.querySelectorAll("div, p, span"));
+        for (const el of potentialElements) {
+          const text = el.innerText.trim();
+          if (text.length > 20) {
+            questionText = text;
+            questionTextElement = el;
+            break;
           }
         }
       }
-      answerElements = mcqViewElement.shadowRoot.querySelectorAll(
-        ".mcq__item-label.js-item-label"
-      );
+
+      answerElements = mcqViewElement.shadowRoot.querySelectorAll(".mcq__item-label.js-item-label, .mcq__item, label");
+      if (answerElements.length === 0 && baseView && baseView.shadowRoot) {
+        answerElements = baseView.shadowRoot.querySelectorAll(".mcq__item-label.js-item-label, .mcq__item, label");
+      }
     } else {
-      console.warn(
-        `NetAcad UI: MCQ View element or its shadowRoot is missing for question ${
-          index + 1
-        }`
-      );
       questionText = "Error: MCQ View element not accessible.";
     }
   } catch (e) {
-    console.error(
-      `NetAcad UI: Error extracting Q&A for question ${index + 1}:`,
-      e,
-      mcqViewElement
-    );
+    console.error(`NetAcad UI: Error extracting Q&A for question ${index + 1}:`, e);
     questionText = `Error extracting data. Check console.`;
   }
   return { questionText, answerElements, questionTextElement };
@@ -164,37 +206,62 @@ function extractMatchingQuestion(omvElement, index) {
       return { questionText: "Error: object-matching-view shadowRoot missing.", categories, options, questionTextElement };
     }
     const sr = omvElement.shadowRoot;
-
     const baseView = sr.querySelector('base-view[type="component"]');
-    if (baseView && baseView.shadowRoot) {
-      questionTextElement =
-        baseView.shadowRoot.querySelector("div.component__body-inner") ||
-        baseView.shadowRoot.querySelector(".objectMatching__prompt") ||
-        baseView.shadowRoot.querySelector(".prompt");
-      if (questionTextElement) questionText = questionTextElement.innerText.trim();
-    }
-    if (!questionTextElement) {
-      questionTextElement =
-        sr.querySelector(".objectMatching__title") ||
-        sr.querySelector(".component__title") ||
-        sr.querySelector(".objectMatching__widget");
-      if (questionTextElement && questionText === "Question text not found") {
-        const t = questionTextElement.innerText.trim();
-        if (t) questionText = t.split("\n")[0];
-      }
-    }
+    const root = (baseView && baseView.shadowRoot) ? baseView.shadowRoot : sr;
 
-    sr.querySelectorAll(".objectMatching-category-item").forEach((btn) => {
-      const dataId = btn.dataset.id;
-      const text = btn.querySelector(".category-item-text")?.innerText.trim() || "";
-      const letter = btn.querySelector(".category-item-number")?.innerText.trim() || "";
-      categories.push({ dataId, text, letter });
+    questionTextElement =
+      root.querySelector("div.component__body-inner") ||
+      root.querySelector(".objectMatching__prompt") ||
+      root.querySelector(".prompt") ||
+      sr.querySelector(".objectMatching__title") ||
+      sr.querySelector(".component__title");
+
+    if (questionTextElement) questionText = questionTextElement.innerText.trim();
+
+    const categoryEls = Array.from(
+      sr.querySelectorAll(".objectMatching-category-item, .objectMatching__category-item, .category-item, [class*='category']")
+    );
+
+    categoryEls.forEach((btn, i) => {
+      const textEl = btn.querySelector(
+        ".category-item-text, [class*='text']:not([class*='number']):not([class*='letter'])"
+      ) || btn;
+
+      let rawLetter = "";
+      const numEl = btn.querySelector(
+        ".category-item-number, .category-number, .category-letter, " +
+        "[class*='number'], [class*='letter'], [class*='circle']"
+      );
+      if (numEl) {
+        rawLetter = numEl.innerText.trim();
+      }
+
+      rawLetter = rawLetter.replace(/[^A-Za-z0-9]/g, "").trim();
+
+      if (!rawLetter || rawLetter.length > 2) {
+        const leaves = Array.from(btn.querySelectorAll("*")).filter(
+          (el) => el.children.length === 0 && /^[A-Z]$/i.test((el.innerText || "").trim())
+        );
+        rawLetter = leaves.length > 0 ? leaves[0].innerText.trim().toUpperCase() : String.fromCharCode(65 + i);
+      }
+
+      const letter = rawLetter.toUpperCase();
+      const text = textEl.innerText.trim();
+
+      if (text && !categories.some((c) => c.letter === letter)) {
+        categories.push({ text, letter, element: btn });
+      }
     });
 
-    sr.querySelectorAll(".objectMatching-option-item").forEach((btn) => {
-      const dataId = btn.dataset.id;
+    const optionEls = Array.from(
+      sr.querySelectorAll(".objectMatching-option-item, .objectMatching__option-item, .option-item, [class*='option']")
+    );
+
+    optionEls.forEach((btn) => {
       const text = btn.innerText.trim();
-      options.push({ dataId, text });
+      if (text && !options.some((o) => o.text === text)) {
+        options.push({ text, element: btn });
+      }
     });
   } catch (e) {
     console.error(`NetAcad UI: Error extracting matching Q ${index + 1}:`, e);
@@ -204,41 +271,661 @@ function extractMatchingQuestion(omvElement, index) {
 }
 
 function processAnswerElements(answerElements, index) {
-  let answerTexts = [];
-  if (answerElements.length > 0) {
-    console.debug("NetAcad UI: Possible Answers:");
-    answerElements.forEach((answer, answerIndex) => {
-      const ansText = answer.innerText.trim();
+  const answerTexts = [];
+  const seen = new Set();
+  answerElements.forEach((answer) => {
+    const ansText = answer.innerText.trim();
+    if (ansText && !seen.has(ansText)) {
+      seen.add(ansText);
       answerTexts.push(ansText);
-      console.debug(`NetAcad UI:   ${answerIndex + 1}: ${ansText}`);
-    });
-  } else {
-    console.debug(`NetAcad UI: No answer elements found for question ${index + 1}.`);
-  }
+    }
+  });
   return answerTexts;
 }
 
-function updateUiAndLogsPostExtraction(aiAnswerDisplay, questionText, answerTexts, index) {
-  console.debug(`NetAcad UI: --- Question ${index + 1} --- Details --- `);
-  console.debug("NetAcad UI: Question:", questionText);
-  console.debug("NetAcad UI: Answers Extracted:", answerTexts);
+function dispatchFullClickSequence(targetElement) {
+  if (!targetElement) return;
+  try {
+    const opts = { bubbles: true, cancelable: true, view: window, buttons: 1 };
+    targetElement.dispatchEvent(new PointerEvent("pointerdown", opts));
+    targetElement.dispatchEvent(new MouseEvent("mousedown", opts));
+    if (typeof targetElement.focus === "function") targetElement.focus();
+    targetElement.dispatchEvent(new MouseEvent("mouseup", opts));
+    targetElement.dispatchEvent(new PointerEvent("pointerup", opts));
+    targetElement.click();
+    targetElement.dispatchEvent(new MouseEvent("click", opts));
+  } catch (err) {
+    targetElement.click();
+  }
+}
 
-  if (answerTexts.length === 0) {
-    if (
-      questionText !== "Question text not found" &&
-      !questionText.startsWith("Error:")
-    ) {
-      aiAnswerDisplay.textContent =
-        "AI Assistant: Question found, but no answer options detected.";
-    } else {
-      aiAnswerDisplay.textContent = questionText; // Show the extraction error
+function findExactMatchingElements(sr, categoryLetter, targetOptionText) {
+  let exactCategoryNode = null;
+  let exactCategoryClickTarget = null;
+  let exactOptionNode = null;
+  let exactOptionClickTarget = null;
+
+  const catCards = Array.from(
+    sr.querySelectorAll(".objectMatching-category-item, .objectMatching__category-item, .category-item, [class*='category']")
+  );
+
+  for (const catCard of catCards) {
+    const letterCircleNode = catCard.querySelector(
+      ".category-item-number, .category-number, [class*='number'], [class*='letter'], [class*='circle'], .circle"
+    );
+    const textStr = (letterCircleNode ? letterCircleNode.innerText : catCard.innerText || "").trim().toUpperCase();
+
+    if (textStr === categoryLetter || textStr.startsWith(categoryLetter) || catCard.dataset?.id === categoryLetter) {
+      exactCategoryNode = catCard;
+      exactCategoryClickTarget = letterCircleNode || catCard;
+      break;
     }
   }
 
-  if (
-    questionText.startsWith("Error:") ||
-    questionText === "Question text not found"
-  ) {
+  if (!exactCategoryNode) {
+    const allEls = Array.from(sr.querySelectorAll("*"));
+    const catCircleEl = allEls.find((el) => {
+      const txt = (el.innerText || "").trim().toUpperCase();
+      return txt === categoryLetter && el.children.length === 0;
+    });
+    if (catCircleEl) {
+      exactCategoryClickTarget = catCircleEl;
+      exactCategoryNode = catCircleEl.closest("[class*='category']") || catCircleEl.parentElement || catCircleEl;
+    }
+  }
+
+  const optCards = Array.from(
+    sr.querySelectorAll(".objectMatching-option-item, .objectMatching__option-item, .option-item, [class*='option']")
+  );
+
+  for (const optCard of optCards) {
+    const fullText = (optCard.innerText || "").trim().toLowerCase();
+    if (!fullText) continue;
+
+    const isExact = fullText === targetOptionText;
+    const isPrefix = fullText.startsWith(targetOptionText);
+    const isContained = fullText.length >= 6 && targetOptionText.includes(fullText);
+
+    if (isExact || isPrefix || isContained) {
+      exactOptionNode = optCard;
+      const circleNode = optCard.querySelector(
+        ".option-item-circle, .option-circle, .option-target, " +
+        "[class*='circle'], [class*='target']"
+      );
+      exactOptionClickTarget = circleNode || optCard;
+      break;
+    }
+  }
+
+  if (!exactOptionNode) {
+    const candidates = Array.from(sr.querySelectorAll("div, p, span, button, label"));
+    for (const el of candidates) {
+      const txt = (el.innerText || "").trim().toLowerCase();
+      if (!txt) continue;
+      const isExact = txt === targetOptionText;
+      const isPrefix = txt.startsWith(targetOptionText);
+      const isContained = txt.length >= 6 && targetOptionText.includes(txt);
+      if (isExact || isPrefix || isContained) {
+        exactOptionNode = el.closest("[class*='option']") || el.parentElement || el;
+        const circleNode = exactOptionNode.querySelector(
+          ".option-item-circle, .option-circle, .option-target, [class*='circle'], [class*='target']"
+        );
+        exactOptionClickTarget = circleNode || exactOptionNode;
+        break;
+      }
+    }
+  }
+
+  return { exactCategoryNode, exactCategoryClickTarget, exactOptionNode, exactOptionClickTarget };
+}
+
+async function processMatchingPairsSequentially(sr, pairs) {
+  for (const pair of pairs) {
+    const parts = pair.split(":");
+    if (parts.length < 2) continue;
+
+    const categoryLetter = parts[0].trim().toUpperCase();
+    const targetOptionText = parts.slice(1).join(":").trim().toLowerCase();
+
+    const { exactCategoryNode, exactCategoryClickTarget, exactOptionNode, exactOptionClickTarget } =
+      findExactMatchingElements(sr, categoryLetter, targetOptionText);
+
+    if (exactCategoryClickTarget && exactOptionClickTarget) {
+      console.debug(`NetAcad AutoAnswer: Exact DOM match '${categoryLetter}' → '${targetOptionText}'`);
+
+      // --- Click category circle ---
+      dispatchFullClickSequence(exactCategoryClickTarget);
+      if (exactCategoryNode && exactCategoryNode !== exactCategoryClickTarget) {
+        dispatchFullClickSequence(exactCategoryNode);
+      }
+      exactCategoryNode.style.outline = "2px solid #38bdf8";
+
+      await new Promise((res) => setTimeout(res, 350));
+
+      // --- Click option ---
+      dispatchFullClickSequence(exactOptionClickTarget);
+      if (exactOptionNode && exactOptionNode !== exactOptionClickTarget) {
+        dispatchFullClickSequence(exactOptionNode);
+      }
+
+      await new Promise((res) => setTimeout(res, 400));
+
+      // --- Verify the connection was registered ---
+      const connectedSignals = ["is-connected", "selected", "matched", "active", "correct", "answered"];
+      const isConnected =
+        connectedSignals.some((cls) => exactCategoryNode.classList.contains(cls) || exactOptionNode.classList.contains(cls)) ||
+        exactCategoryNode.getAttribute("aria-pressed") === "true" ||
+        exactOptionNode.getAttribute("aria-pressed") === "true" ||
+        exactCategoryNode.getAttribute("aria-selected") === "true" ||
+        exactOptionNode.getAttribute("aria-selected") === "true";
+
+      if (!isConnected) {
+        console.debug(`NetAcad AutoAnswer: No connection signal detected for '${categoryLetter}'; retrying...`);
+        await new Promise((res) => setTimeout(res, 500));
+        dispatchFullClickSequence(exactCategoryClickTarget);
+        await new Promise((res) => setTimeout(res, 400));
+        dispatchFullClickSequence(exactOptionClickTarget);
+        await new Promise((res) => setTimeout(res, 400));
+      }
+
+      exactOptionNode.style.outline = "2px solid #10b981";
+      exactCategoryNode.style.outline = "2px solid #10b981";
+      exactOptionNode.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+      exactCategoryNode.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+
+      await new Promise((res) => setTimeout(res, 200));
+    } else {
+      console.warn(
+        `NetAcad AutoAnswer: Could not find DOM targets for '${categoryLetter}' → '${targetOptionText}'` +
+        ` | categoryFound=${!!exactCategoryClickTarget} | optionFound=${!!exactOptionClickTarget}`
+      );
+    }
+  }
+}
+
+// --- Video Auto-Completer Feature ---
+function autoCompleteVideosOnPage() {
+  const roots = [document, ...getShadowRoots(document)];
+  let videosProcessed = 0;
+
+  roots.forEach((root) => {
+    const videos = Array.from(root.querySelectorAll("video"));
+    videos.forEach((video) => {
+      try {
+        if (video.duration && !isNaN(video.duration) && video.duration > 0) {
+          video.currentTime = Math.max(0, video.duration - 0.5);
+          video.play().catch(() => {});
+          video.dispatchEvent(new Event("timeupdate", { bubbles: true }));
+          video.dispatchEvent(new Event("ended", { bubbles: true }));
+          videosProcessed++;
+          console.debug(`NetAcad AutoAnswer: Video completion triggered at ${video.currentTime}s.`);
+        } else {
+          video.play().catch(() => {});
+          video.dispatchEvent(new Event("ended", { bubbles: true }));
+          videosProcessed++;
+        }
+      } catch (err) {
+        console.error("NetAcad UI: Video fast-forward error:", err);
+      }
+    });
+  });
+
+  return videosProcessed;
+}
+
+// --- Module Smooth Auto-Scroller Feature ---
+async function autoScrollModulePage() {
+  console.debug("NetAcad AutoAnswer: Starting module smooth auto-scroll...");
+  const scrollStep = 300;
+  const maxScroll = Math.max(
+    document.body.scrollHeight,
+    document.documentElement.scrollHeight,
+    window.innerHeight * 4
+  );
+
+  let currentY = window.scrollY || 0;
+  while (currentY < maxScroll) {
+    currentY += scrollStep;
+    window.scrollTo({ top: currentY, behavior: "smooth" });
+    await new Promise((res) => setTimeout(res, 80));
+  }
+
+  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+  await new Promise((res) => setTimeout(res, 300));
+}
+
+// --- Parse 3-Level Table of Contents (Level 1 Module -> Level 2 Section -> Level 3 Sub-Topic) ---
+function parseThreeLevelCourseToC() {
+  const roots = [document, ...getShadowRoots(document)];
+  const allSubTopics = [];
+
+  roots.forEach((root) => {
+    // 1. Automatically expand any collapsed Level 1 / Level 2 module accordions
+    const expandButtons = Array.from(
+      root.querySelectorAll(".accordion-toggle, .expand-btn, [class*='expand'], [aria-expanded='false']")
+    );
+    expandButtons.forEach((btn) => {
+      try {
+        if (btn.getAttribute("aria-expanded") === "false" || btn.classList.contains("collapsed")) {
+          btn.click();
+        }
+      } catch (_) {}
+    });
+
+    // 2. Query Level 3 sub-topic elements (e.g., 2.2.1, 2.2.2, 2.2.3 Video...)
+    const items = Array.from(
+      root.querySelectorAll(
+        "li, .tree-node, .subtopic-item, .topic-item, [class*='subtopic'], [class*='tree-item'], [class*='leaf']"
+      )
+    );
+
+    items.forEach((item, index) => {
+      const text = (item.innerText || "").trim();
+      if (!text) return;
+
+      const firstLine = text.split("\n")[0].trim();
+      const isLevel3Pattern = /^\d+\.\d+\.\d+/i.test(firstLine);
+      if (!isLevel3Pattern) return;
+
+      const title = firstLine;
+
+      const hasCheckmark =
+        item.querySelector(".icon-check, .completed, [class*='check'], svg[class*='check'], [data-icon='check']") !== null ||
+        item.classList.contains("completed") ||
+        item.classList.contains("done") ||
+        item.getAttribute("data-completed") === "true";
+
+      const isCompleted = hasCheckmark;
+
+      if (!allSubTopics.some((t) => t.title === title)) {
+        allSubTopics.push({
+          index,
+          title,
+          isCompleted,
+          element: item,
+        });
+      }
+    });
+  });
+
+  const completedCount = allSubTopics.filter((t) => t.isCompleted).length;
+  const incompleteSubTopics = allSubTopics.filter((t) => !t.isCompleted);
+
+  console.log(`NetAcad 3-Level ToC Status: ${completedCount}/${allSubTopics.length} Level-3 sub-topics completed.`);
+  return { allSubTopics, completedCount, incompleteSubTopics };
+}
+
+// --- Navigate to First Incomplete Level-3 Sub-Topic ---
+function navigateToFirstIncompleteLevel3Item() {
+  const { incompleteSubTopics } = parseThreeLevelCourseToC();
+  if (incompleteSubTopics.length > 0) {
+    const firstIncomplete = incompleteSubTopics[0];
+    console.log(`NetAcad Auto-Pilot: Navigating to incomplete Level-3 topic: "${firstIncomplete.title}"`);
+    dispatchFullClickSequence(firstIncomplete.element);
+    return true;
+  }
+  console.log("NetAcad Auto-Pilot: All Level-3 sub-topics in course are 100% completed! 🎉");
+  return false;
+}
+
+// --- Check Entire Course Outline Completion Status ---
+function checkModuleCompletionStatus() {
+  const roots = [document, ...getShadowRoots(document)];
+  const modulesList = [];
+
+  roots.forEach((root) => {
+    const items = Array.from(
+      root.querySelectorAll(
+        ".course-outline-item, .tree-item, .module-item, .topic-item, [class*='outline-item'], [class*='topic'], [class*='submodule']"
+      )
+    );
+
+    items.forEach((item, index) => {
+      const text = (item.innerText || "").trim();
+      if (!text || text.length < 3) return;
+
+      const hasCheckmark =
+        item.querySelector(".icon-check, .completed, [class*='check'], [class*='complete'], svg[class*='check']") !== null ||
+        item.classList.contains("completed") ||
+        item.classList.contains("is-complete") ||
+        item.getAttribute("data-completed") === "true";
+
+      const fractionMatch = text.match(/(\d+)\s*\/\s*(\d+)/);
+      let isCompleted = hasCheckmark;
+      if (fractionMatch) {
+        const current = parseInt(fractionMatch[1], 10);
+        const total = parseInt(fractionMatch[2], 10);
+        isCompleted = current >= total;
+      }
+
+      if (!modulesList.some((m) => m.title === text.split("\n")[0].trim())) {
+        modulesList.push({
+          index,
+          title: text.split("\n")[0].trim(),
+          isCompleted,
+          element: item,
+        });
+      }
+    });
+  });
+
+  const completedCount = modulesList.filter((m) => m.isCompleted).length;
+  const incompleteModules = modulesList.filter((m) => !m.isCompleted);
+
+  console.log(`NetAcad Course Status: ${completedCount}/${modulesList.length} sub-modules completed.`);
+  return { modulesList, completedCount, incompleteModules };
+}
+
+function navigateToFirstIncompleteModule() {
+  const navigatedL3 = navigateToFirstIncompleteLevel3Item();
+  if (navigatedL3) return true;
+
+  const { incompleteModules } = checkModuleCompletionStatus();
+  if (incompleteModules.length > 0) {
+    const firstIncomplete = incompleteModules[0];
+    console.log(`NetAcad Course Auto-Pilot: Navigating to first incomplete sub-module: "${firstIncomplete.title}"`);
+    dispatchFullClickSequence(firstIncomplete.element);
+    return true;
+  }
+  console.log("NetAcad Course Auto-Pilot: All modules in course are 100% completed! 🎉");
+  return false;
+}
+
+// --- Navigate to Next Sub-Module ---
+function navigateToNextSubModule() {
+  const roots = [document, ...getShadowRoots(document)];
+  for (const root of roots) {
+    const buttons = Array.from(root.querySelectorAll("button, a, input[type='button'], .nav-btn"));
+    const nextSubModuleBtn = buttons.find((b) => {
+      const txt = (b.innerText || b.value || b.getAttribute("aria-label") || b.getAttribute("title") || "").trim().toLowerCase();
+      return (
+        txt.includes("next module") ||
+        txt.includes("next topic") ||
+        txt.includes("next sub-module") ||
+        txt.includes("next page") ||
+        b.classList.contains("nav-next-submodule") ||
+        b.classList.contains("next-topic")
+      );
+    });
+
+    if (nextSubModuleBtn && !nextSubModuleBtn.disabled) {
+      dispatchFullClickSequence(nextSubModuleBtn);
+      console.debug("NetAcad AutoAnswer: Clicked next sub-module button!");
+      return true;
+    }
+  }
+
+  return navigateToFirstIncompleteModule();
+}
+
+async function autoSelectOptionsInDom(mcqViewElement, answerText) {
+  if (!mcqViewElement || !answerText || answerText.toLowerCase().startsWith("error:")) return;
+
+  try {
+    const sr = mcqViewElement.shadowRoot;
+    if (!sr) return;
+
+    const isMatching = (mcqViewElement && mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view") ||
+                       (answerText && /^A:\s+.*///\s+B:/i.test(answerText));
+
+    if (isMatching) {
+      console.log("NetAcad UI: Object-matching question detected — suggesting answer in UI panel without auto-filling.");
+      return;
+    }
+
+    const targetAnswers = answerText.split(" /// ").map((a) => a.trim().toLowerCase()).filter(Boolean);
+    const baseView = sr.querySelector('base-view[type="component"]');
+    const searchRoot = (baseView && baseView.shadowRoot) ? baseView.shadowRoot : sr;
+
+    const candidateNodes = [
+      ...Array.from(sr.querySelectorAll(".mcq__item-label, .mcq__item, label, mat-checkbox, mat-radio-button, .component__option")),
+      ...Array.from(searchRoot.querySelectorAll(".mcq__item-label, .mcq__item, label, mat-checkbox, mat-radio-button, .component__option")),
+    ];
+
+    const uniqueNodes = Array.from(new Set(candidateNodes));
+
+    uniqueNodes.forEach((node) => {
+      const nodeText = node.innerText ? node.innerText.trim().toLowerCase() : "";
+      if (!nodeText) return;
+
+      const isMatch = targetAnswers.some((ans) => {
+        if (!ans) return false;
+        return nodeText === ans || nodeText.includes(ans) || ans.includes(nodeText);
+      });
+
+      if (isMatch) {
+        const inputEl = node.querySelector("input[type='checkbox'], input[type='radio']") || (node.tagName === "INPUT" ? node : null);
+        if (inputEl) {
+          if (!inputEl.checked) {
+            dispatchFullClickSequence(inputEl);
+            inputEl.checked = true;
+            inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+            inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        } else {
+          dispatchFullClickSequence(node);
+        }
+
+        node.style.outline = "2px solid #10b981";
+        node.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+        node.style.borderRadius = "6px";
+        node.style.transition = "all 0.2s ease-in-out";
+      }
+    });
+  } catch (err) {
+    console.error("NetAcad UI: Auto-select error:", err);
+  }
+}
+
+function autoSubmitCurrentQuestion() {
+  const roots = [document, ...getShadowRoots(document)];
+  for (const root of roots) {
+    const buttons = Array.from(root.querySelectorAll("button, input[type='button'], input[type='submit'], .button, mat-button"));
+    const submitBtn = buttons.find((b) => {
+      const txt = (b.innerText || b.value || "").trim().toLowerCase();
+      return (
+        txt === "check" ||
+        txt === "submit" ||
+        txt === "check answer" ||
+        txt === "verifikasi" ||
+        txt === "kirim" ||
+        b.classList.contains("mcq__submit") ||
+        b.classList.contains("js-submit-btn") ||
+        b.classList.contains("component__submit")
+      );
+    });
+
+    if (submitBtn && !submitBtn.disabled) {
+      dispatchFullClickSequence(submitBtn);
+      console.debug("NetAcad AutoAnswer: Clicked per-question Submit button.");
+      return true;
+    }
+  }
+  return false;
+}
+
+function autoSubmitQuestion(mcqViewElement) {
+  if (!mcqViewElement) return autoSubmitCurrentQuestion();
+  try {
+    const sr = mcqViewElement.shadowRoot;
+    const baseView = sr ? sr.querySelector('base-view[type="component"]') : null;
+    const searchRoots = [
+      sr,
+      baseView && baseView.shadowRoot ? baseView.shadowRoot : null,
+      document,
+    ].filter(Boolean);
+
+    for (const root of searchRoots) {
+      const buttons = Array.from(root.querySelectorAll("button, input[type='button'], input[type='submit'], .button"));
+      const submitBtn = buttons.find((b) => {
+        const txt = (b.innerText || b.value || "").trim().toLowerCase();
+        return (
+          txt === "check" ||
+          txt === "submit" ||
+          txt === "check answer" ||
+          txt === "verifikasi" ||
+          txt === "kirim" ||
+          b.classList.contains("mcq__submit") ||
+          b.classList.contains("js-submit-btn") ||
+          b.classList.contains("component__submit")
+        );
+      });
+
+      if (submitBtn && !submitBtn.disabled) {
+        setTimeout(() => {
+          dispatchFullClickSequence(submitBtn);
+          console.debug("NetAcad AutoAnswer: Auto-submitted question!");
+        }, 300);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("NetAcad UI: Auto-submit error:", err);
+  }
+  return autoSubmitCurrentQuestion();
+}
+
+
+function detectFinalSubmitPage() {
+  const roots = [document, ...getShadowRoots(document)];
+  for (const root of roots) {
+    const text = (root.innerText || root.textContent || "").toLowerCase();
+    if (text.includes("submit my assessment") || text.includes("yes, confirm my submission")) {
+      return root;
+    }
+  }
+  return null;
+}
+
+function confirmAndSubmitFinalAssessment() {
+  try {
+    const finalRoot = detectFinalSubmitPage();
+    if (!finalRoot) return false;
+
+    const checkboxes = Array.from(finalRoot.querySelectorAll("input[type='checkbox'], mat-checkbox"));
+    checkboxes.forEach((cb) => {
+      if (!cb.checked) {
+        dispatchFullClickSequence(cb);
+        cb.checked = true;
+        cb.dispatchEvent(new Event("change", { bubbles: true }));
+        cb.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+
+    const buttons = Array.from(finalRoot.querySelectorAll("button, input[type='submit'], .button, mat-button"));
+    const finalSubmitBtn = buttons.find((b) => {
+      const txt = (b.innerText || b.value || "").trim().toLowerCase();
+      return txt === "submit" || txt === "submit assessment" || txt === "kirim" || b.classList.contains("button--primary");
+    });
+
+    if (finalSubmitBtn) {
+      setTimeout(() => {
+        dispatchFullClickSequence(finalSubmitBtn);
+        console.debug("NetAcad AutoAnswer: Confirmed and submitted final assessment!");
+      }, 300);
+      return true;
+    }
+  } catch (err) {
+    console.error("NetAcad UI: Final submission error:", err);
+  }
+  return false;
+}
+
+function clickQuestionTabByIndex(targetIndex) {
+  try {
+    const roots = [document, ...getShadowRoots(document)];
+    for (const root of roots) {
+      const buttons = Array.from(root.querySelectorAll("button, a, input[type='button'], .q-tab, .button, [role='tab'], .mat-tab-label, .page-item"));
+      const qTabs = buttons.filter((b) => {
+        const txt = (b.innerText || b.textContent || "").trim();
+        const ariaLabel = (b.getAttribute("aria-label") || "").trim();
+        const isQFormat = /^Q\d+$/i.test(txt) || /^\d+$/.test(txt) || /^Question\s+\d+$/i.test(txt) || /^Q\d+$/i.test(ariaLabel) || /^Question\s+\d+$/i.test(ariaLabel);
+        return isQFormat || txt.toLowerCase() === "submit page";
+      });
+
+      if (qTabs.length > 0) {
+        if (typeof targetIndex === "number" && targetIndex >= 0 && targetIndex < qTabs.length) {
+          dispatchFullClickSequence(qTabs[targetIndex]);
+          console.debug(`NetAcad AutoAnswer: Clicked Q-tab index ${targetIndex}: ${qTabs[targetIndex].innerText || qTabs[targetIndex].textContent}`);
+          return true;
+        }
+
+        const activeIdx = qTabs.findIndex((b) =>
+          b.classList.contains("active") ||
+          b.classList.contains("selected") ||
+          b.classList.contains("current") ||
+          b.getAttribute("aria-selected") === "true" ||
+          b.getAttribute("aria-current") === "page" ||
+          b.getAttribute("aria-current") === "true" ||
+          b.disabled
+        );
+
+        if (activeIdx !== -1 && activeIdx < qTabs.length - 1) {
+          dispatchFullClickSequence(qTabs[activeIdx + 1]);
+          console.debug(`NetAcad AutoAnswer: Advanced from active Q-tab index ${activeIdx} to ${activeIdx + 1}`);
+          return true;
+        } else if (activeIdx === -1 && qTabs.length > 0) {
+          dispatchFullClickSequence(qTabs[0]);
+          return true;
+        }
+      }
+
+      const nextArrow = buttons.find((b) => {
+        const text = (b.innerText || b.value || b.getAttribute("aria-label") || b.getAttribute("title") || "").trim().toLowerCase();
+        return text === ">" || text === "next" || text === "next question" || b.classList.contains("nav-next") || b.classList.contains("next-btn");
+      });
+
+      if (nextArrow && !nextArrow.disabled) {
+        dispatchFullClickSequence(nextArrow);
+        console.debug("NetAcad AutoAnswer: Clicked next arrow button.");
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("NetAcad UI: Error clicking question tab by index:", err);
+  }
+  return false;
+}
+
+function clickNextQuestionButton() {
+  try {
+    const roots = [document, ...getShadowRoots(document)];
+    for (const root of roots) {
+      const buttons = Array.from(root.querySelectorAll("button, a, input[type='button'], .button, mat-button"));
+      const nextBtn = buttons.find((b) => {
+        const text = (b.innerText || b.value || b.getAttribute("aria-label") || b.getAttribute("title") || "").trim().toLowerCase();
+        return (
+          text === ">" ||
+          text === "next" ||
+          text === "next question" ||
+          text === "lanjut" ||
+          text === "berikutnya" ||
+          b.classList.contains("nav-next") ||
+          b.classList.contains("next-btn") ||
+          b.classList.contains("js-next-btn")
+        );
+      });
+
+      if (nextBtn && !nextBtn.disabled) {
+        dispatchFullClickSequence(nextBtn);
+        console.debug("NetAcad AutoAnswer: Clicked Next question button.");
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error("NetAcad UI: Error clicking Next question button:", err);
+  }
+  return false;
+}
+
+function clickNextQuestionTab() {
+  return clickNextQuestionButton();
+}
+
+function updateUiAndLogsPostExtraction(aiAnswerDisplay, questionText, answerTexts, index) {
+  if (answerTexts.length === 0 && questionText !== "Question text not found" && !questionText.startsWith("Error:")) {
+    aiAnswerDisplay.textContent = "Question found, but no answer options detected.";
+  } else if (questionText.startsWith("Error:") || questionText === "Question text not found") {
     aiAnswerDisplay.textContent = questionText;
   }
 }
@@ -247,388 +934,79 @@ function injectUi(uiContainer, questionTextElement, mcqViewElement, uiContainerI
   let uiInjected = false;
   if (questionTextElement && questionTextElement.parentNode) {
     try {
-      const oldUiInPlace = questionTextElement.parentNode.querySelector(
-        `#${uiContainerId}`
-      );
-      if (oldUiInPlace) {
-        console.debug(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): Removing existing UI (id: ${uiContainerId}) from questionTextElement's parent.`
-        );
-        oldUiInPlace.remove();
-      }
-
-      console.debug(
-        `NetAcad UI: Injection (Q ${index + 1}): Preparing to inject. uiContainer.id: ${
-          uiContainer.id
-        }, uiContainer.outerHTML (brief): ${uiContainer.outerHTML.substring(
-          0,
-          100
-        )}...`
-      );
-      console.debug(
-        `NetAcad UI: Injection (Q ${index + 1}): questionTextElement is <${
-          questionTextElement.tagName
-        }>. Parent is <${questionTextElement.parentNode.tagName}>.`
-      );
-
-      questionTextElement.parentNode.insertBefore(
-        uiContainer,
-        questionTextElement.nextSibling
-      );
-
-      const injectedElementCheck = questionTextElement.parentNode.querySelector(
-        `#${uiContainerId}`
-      );
-      if (injectedElementCheck) {
-        console.debug(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): SUCCESS - Injected after questionTextElement. Element #${uiContainerId} FOUND in parent. Parent: <${
-            questionTextElement.parentNode.tagName
-          }>, questionTextElement: <${
-            questionTextElement.tagName
-          }>. Injected el: <${injectedElementCheck.tagName}>`
-        );
-        uiInjected = true;
-
-        // Deferred check
-        setTimeout(() => {
-          const stillThereCheck = document.getElementById(uiContainerId); // Check globally as it might have been moved
-          if (stillThereCheck) {
-            console.debug(
-              `NetAcad UI: Injection (Q ${
-                index + 1
-              }) DEFERRED CHECK: Element #${uiContainerId} IS STILL in the DOM (document.getElementById). Visible: ${!!stillThereCheck.offsetParent}`
-            );
-            const parentNode = stillThereCheck.parentNode;
-            const rootNode = parentNode ? parentNode.getRootNode() : null;
-            let hostInfo =
-              "Parent context unclear (element may have been moved).";
-            if (rootNode && rootNode instanceof ShadowRoot) {
-              hostInfo = `Parent is in a ShadowRoot. Host: <${
-                rootNode.host.tagName
-              } id="${rootNode.host.id}" class="${rootNode.host.className}">. Host visible: ${!!rootNode.host.offsetParent}.`;
-            } else if (rootNode) {
-              hostInfo = `Parent's rootNode is <${rootNode.nodeName}>.`;
-            }
-            console.debug(
-              `NetAcad UI: Injection (Q ${
-                index + 1
-              }) DEFERRED CHECK - Parent Context: ${hostInfo}. Parent Tag: ${
-                parentNode ? `<${parentNode.tagName}>` : "N/A"
-              }. Parent visible: ${!!(parentNode && parentNode.offsetParent)}`
-            );
-          } else {
-            // If not found by document.getElementById, check the original parent
-            const originalParent = questionTextElement
-              ? questionTextElement.parentNode
-              : null;
-            if (!originalParent) {
-              console.error(
-                `NetAcad UI: Injection (Q ${
-                  index + 1
-                }) DEFERRED CHECK: Original parent (questionTextElement.parentNode) is null. Cannot check further.`
-              );
-              return;
-            }
-
-            const stillInOriginalParentCheck = originalParent.querySelector(
-              `#${uiContainerId}`
-            );
-            if (stillInOriginalParentCheck) {
-              const rootNode = originalParent.getRootNode();
-              let hostInfo =
-                "Original parent is not in a Shadow DOM or getRootNode is document.";
-              if (rootNode instanceof ShadowRoot) {
-                hostInfo = `Original parent is in a ShadowRoot. Host: <${
-                  rootNode.host.tagName
-                } id="${rootNode.host.id}" class="${
-                  rootNode.host.className
-                }">. Host visible: ${!!rootNode.host.offsetParent}.`;
-              } else if (rootNode === document) {
-                hostInfo = "Original parent's rootNode is the main document.";
-              } else {
-                hostInfo = `Original parent's rootNode is of type ${
-                  rootNode.nodeName || "unknown"
-                }`;
-              }
-              console.debug(
-                `NetAcad UI: Injection (Q ${
-                  index + 1
-                }) DEFERRED CHECK - Original Parent Context: ${hostInfo}. Original Parent Tag: <${
-                  originalParent.tagName
-                }>. Original Parent Visible (offsetParent): ${!!originalParent.offsetParent}`
-              );
-            } else {
-              console.error(
-                `NetAcad UI: Injection (Q ${
-                  index + 1
-                }) DEFERRED CHECK: Element #${uiContainerId} NO LONGER in original parent NOR by document.getElementById. Likely removed or parent changed.`
-              );
-            }
-          }
-        }, 500);
-      } else {
-        console.error(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): CRITICAL FAILURE - insertBefore called, but element #${uiContainerId} NOT FOUND in parent immediately after. Parent: <${
-            questionTextElement.parentNode.tagName
-          }>, questionTextElement: <${questionTextElement.tagName}>.`
-        );
-        uiInjected = false; // Explicitly set to false
-      }
+      const oldUi = questionTextElement.parentNode.querySelector(`#${uiContainerId}`);
+      if (oldUi) oldUi.remove();
+      questionTextElement.parentNode.insertBefore(uiContainer, questionTextElement.nextSibling);
+      uiInjected = true;
     } catch (e) {
-      console.warn(
-        `NetAcad UI: Injection (Q ${
-          index + 1
-        }): FAILED to inject after questionTextElement. Parent: ${
-          questionTextElement.parentNode
-            ? `<${questionTextElement.parentNode.tagName}>`
-            : "null"
-        }, questionTextElement: <${questionTextElement.tagName}>. Error:`,
-        e
-      );
+      console.warn(`NetAcad UI: Failed injection after questionTextElement for Q${index + 1}`);
     }
-  } else {
-    console.debug(
-      `NetAcad UI: Injection (Q ${
-        index + 1
-      }): SKIPPED - questionTextElement (found: ${!!questionTextElement}) or its parentNode (parent exists: ${!!(
-        questionTextElement && questionTextElement.parentNode
-      )}) is missing.`
-    );
   }
 
   if (!uiInjected && mcqViewElement && mcqViewElement.shadowRoot) {
-    console.debug(
-      `NetAcad UI: Injection (Q ${
-        index + 1
-      }): Attempting fallback to mcqViewElement.shadowRoot.`
-    );
+    const oldUi = mcqViewElement.shadowRoot.querySelector(`#${uiContainerId}`);
+    if (oldUi) oldUi.remove();
     mcqViewElement.shadowRoot.appendChild(uiContainer);
-    console.debug(
-      `NetAcad UI: Injection (Q ${
-        index + 1
-      }): SUCCESS - Injected into mcqViewElement.shadowRoot.`
-    );
     uiInjected = true;
-  } else if (!uiInjected) {
-    console.debug(
-      `NetAcad UI: Injection (Q ${
-        index + 1
-      }): SKIPPED - mcqViewElement (found: ${!!mcqViewElement}) or its shadowRoot (shadowRoot exists: ${!!(
-        mcqViewElement && mcqViewElement.shadowRoot
-      )}) is missing for direct shadowRoot append.`
-    );
-  }
-
-  if (!uiInjected) {
-    const hostElement = mcqViewElement
-      ? mcqViewElement.getRootNode().host
-      : null;
-    console.debug(
-      `NetAcad UI: Injection (Q ${
-        index + 1
-      }): Attempting fallback via hostElement. mcqViewElement present: ${!!mcqViewElement}, hostElement: ${
-        hostElement ? `<${hostElement.tagName}>` : "null"
-      }`
-    );
-    if (hostElement && hostElement.parentElement) {
-      console.debug(
-        `NetAcad UI: Injection (Q ${index + 1}): hostElement.parentElement: ${
-          hostElement.parentElement
-            ? `<${hostElement.parentElement.tagName}>`
-            : "null"
-        }`
-      );
-      // Try to remove existing UI if it was placed here by ID
-      const existingUiByHost = hostElement.parentElement.querySelector(
-        `#${uiContainerId}`
-      );
-      if (
-        existingUiByHost &&
-        existingUiByHost.parentElement === hostElement.parentElement
-      ) {
-        console.debug(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): Removing existing UI (id: ${uiContainerId}) from hostElement.parentElement.`
-        );
-        existingUiByHost.remove();
-      }
-
-      if (hostElement.nextSibling) {
-        hostElement.parentElement.insertBefore(
-          uiContainer,
-          hostElement.nextSibling
-        );
-        console.debug(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): SUCCESS - Injected via hostElement.parentElement, before hostElement.nextSibling.`
-        );
-      } else {
-        hostElement.parentElement.appendChild(uiContainer);
-        console.debug(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): SUCCESS - Appended via hostElement.parentElement.`
-        );
-      }
-      uiInjected = true;
-    } else if (!uiInjected) {
-      console.debug(
-        `NetAcad UI: Injection (Q ${
-          index + 1
-        }): SKIPPED - hostElement (found: ${!!hostElement}) or hostElement.parentElement (found: ${!!(
-          hostElement && hostElement.parentElement
-        )}) is missing.`
-      );
-      // Try to remove existing UI if it was placed here by ID
-      const existingUiInBody = document.body.querySelector(`#${uiContainerId}`);
-      if (
-        existingUiInBody &&
-        existingUiInBody.parentElement === document.body
-      ) {
-        console.debug(
-          `NetAcad UI: Injection (Q ${
-            index + 1
-          }): Removing existing UI (id: ${uiContainerId}) from document.body.`
-        );
-        existingUiInBody.remove();
-      }
-
-      console.warn(
-        `NetAcad UI: Injection (Q ${
-          index + 1
-        }): CRITICAL FALLBACK - Appending to document.body.`
-      );
-      document.body.appendChild(uiContainer);
-      uiInjected = true;
-    }
   }
   return uiInjected;
 }
 
-function getFriendlyGeminiErrorMessage(errorString) {
-  // Handles known Gemini API error patterns
-  if (!errorString) return null;
-  if (errorString.includes('503') && errorString.toLowerCase().includes('overload')) {
-    return 'AI Suggestion: Gemini API is overloaded. Please try again later.';
-  }
-  if (errorString.includes('503') && errorString.toLowerCase().includes('unavailable')) {
-    return 'AI Suggestion: Gemini API is currently unavailable (503). Please try again later.';
-  }
-  if (errorString.includes('quota')) {
-    return 'AI Suggestion: Gemini API quota exceeded. Please check your API usage or try again later.';
-  }
-  if (errorString.includes('invalid') && errorString.toLowerCase().includes('key')) {
-    return 'AI Suggestion: Invalid Gemini API Key. Please check your key in the extension popup.';
-  }
-  // Add more patterns as needed
-  return null;
-}
-
-async function handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDisplay, index) {
+async function handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDisplay, badge, mcqViewElement, index) {
   if (!aiAnswerDisplay) return;
 
-  if (!apiKey) {
-    aiAnswerDisplay.textContent =
-      "API Key not set. Please set it in the extension popup.";
-    console.warn(`NetAcad UI: refreshAction for Q${index + 1}: API Key not available.`);
+  if (questionText === "Question text not found" || questionText.startsWith("Error:")) {
+    aiAnswerDisplay.textContent = questionText;
     return;
   }
 
-  if (
-    questionText === "Question text not found" ||
-    questionText.startsWith("Error:")
-  ) {
-    aiAnswerDisplay.textContent = questionText; // Reshow extraction error
-    console.warn(
-      `NetAcad UI: refreshAction for Q${
-        index + 1
-      }: Aborted due to question extraction issue: ${questionText}`
-    );
-    return;
-  }
-  if (answerTexts.length === 0) {
-    aiAnswerDisplay.textContent =
-      "AI Assistant: No answer options available to send to AI.";
-    console.warn(
-      `NetAcad UI: refreshAction for Q${index + 1}: Aborted, no answer texts.`
-    );
-    return;
-  }
+  aiAnswerDisplay.textContent = "Asking AI assistant...";
+  badge.textContent = "Processing";
+  badge.style.color = "#f59e0b";
+  badge.style.borderColor = "rgba(245, 158, 11, 0.3)";
 
-  aiAnswerDisplay.textContent = "Asking Gemini AI (single refresh)...";
-  console.debug(
-    `NetAcad UI: refreshAction for Q${
-      index + 1
-    }: Asking Gemini AI for question: "${questionText.substring(0, 50)}..."`
-  );
-  const rawAiResponse = await getAiAnswer(questionText, answerTexts, apiKey);
+  const fetchFn = typeof getAiAnswer === "function" ? getAiAnswer : (window.getAiAnswer || globalThis.getAiAnswer);
+  const rawAiResponse = await fetchFn(questionText, answerTexts, apiKey);
 
-  console.debug(
-    `NetAcad UI: AI Answer (single refresh) received for Q${index + 1}: '${rawAiResponse}' (Full text)`
-  );
+  if (rawAiResponse && !rawAiResponse.toLowerCase().startsWith("error:")) {
+    badge.textContent = "Ready";
+    badge.style.color = "#10b981";
+    badge.style.borderColor = "rgba(16, 185, 129, 0.3)";
 
-  if (rawAiResponse && rawAiResponse.trim() !== "" && !rawAiResponse.toLowerCase().startsWith("error:")) {
-    const individualAnswers = rawAiResponse.split('\n').map(ans => ans.trim()).filter(ans => ans.length > 0);
-    if (individualAnswers.length > 1) {
-      aiAnswerDisplay.innerHTML = "AI Suggestions:<br />- " + individualAnswers.join("<br />- ");
-      console.debug(`NetAcad UI: Q${index + 1} (single refresh) multiple answers:`, individualAnswers);
-    } else if (individualAnswers.length === 1) {
-      aiAnswerDisplay.textContent = `AI Suggestion: ${individualAnswers[0]}`;
-      console.debug(`NetAcad UI: Q${index + 1} (single refresh) single answer: ${individualAnswers[0]}`);
+    const multiAnswerSeparator = " /// ";
+    aiAnswerDisplay.textContent = "";
+    if (rawAiResponse.includes(multiAnswerSeparator)) {
+      const individualAnswers = rawAiResponse.split(multiAnswerSeparator).map((a) => a.trim()).filter(Boolean);
+      aiAnswerDisplay.appendChild(buildAnswerNode("AI Suggestions:", individualAnswers));
     } else {
-      aiAnswerDisplay.textContent = "AI Suggestion: No valid answer content received (single refresh).";
-      console.warn(`NetAcad UI: Q${index + 1} (single refresh) AI response was empty or only whitespace after processing: '${rawAiResponse}'`);
+      aiAnswerDisplay.appendChild(buildAnswerNode("AI Suggestion:", [rawAiResponse]));
     }
-  } else if (rawAiResponse && rawAiResponse.toLowerCase().startsWith("error:")) {
-    // Improved error handling
-    const friendlyMsg = getFriendlyGeminiErrorMessage(rawAiResponse);
-    if (friendlyMsg) {
-      aiAnswerDisplay.textContent = friendlyMsg;
-    } else {
-      aiAnswerDisplay.textContent = rawAiResponse; // Display the error message directly
+
+    const stored = await chrome.storage.sync.get(["autoSelect", "autoSubmit"]);
+    if (stored.autoSelect !== false) {
+      await autoSelectOptionsInDom(mcqViewElement, rawAiResponse);
     }
-    console.error(`NetAcad UI: Error displayed for Q${index + 1} (single refresh): ${rawAiResponse}`);
+    if (stored.autoSubmit === true) {
+      autoSubmitQuestion(mcqViewElement);
+    }
   } else {
-    aiAnswerDisplay.textContent =
-      "AI Suggestion: No answer received or answer was empty (single refresh).";
-    console.warn(
-      `NetAcad UI: AI returned empty or whitespace-only answer for Q${
-        index + 1
-      } (single refresh). Original response: '${rawAiResponse}'`
-    );
+    badge.textContent = "Error";
+    badge.style.color = "#f87171";
+    badge.style.borderColor = "rgba(248, 113, 113, 0.3)";
+    aiAnswerDisplay.textContent = rawAiResponse || "Error: No response from AI provider.";
   }
 }
 
 async function processSingleQuestion(mcqViewElement, index, apiKey, preFetchedAiAnswer = null) {
   const uiContainerId = `netacad-ai-q-${index}`;
 
-  // Always attempt to remove old UI from mcqViewElement's shadowRoot first
   if (mcqViewElement && mcqViewElement.shadowRoot) {
-    const existingUiInMcqSR = mcqViewElement.shadowRoot.querySelector(
-      `#${uiContainerId}`
-    );
-    if (existingUiInMcqSR) {
-      console.debug(
-        `NetAcad UI: Removing existing UI (id: ${uiContainerId}) from mcqView SR for Q ${
-          index + 1
-        }`
-      );
-      existingUiInMcqSR.remove();
-    }
+    const existingUi = mcqViewElement.shadowRoot.querySelector(`#${uiContainerId}`);
+    if (existingUi) existingUi.remove();
   }
-  // Note: Removal from questionTextElement.parentNode is handled during injection phase
 
-  const { uiContainer, aiAnswerDisplay, refreshButton } = createAiAssistantUI(uiContainerId, index);
+  const { uiContainer, aiAnswerDisplay, refreshButton, autoSelectButton, copyButton, badge } = createAiAssistantUI(uiContainerId, index);
 
-  // --- 2. Extract Question and Answers (dispatch by element type) ---
   const isMatching = mcqViewElement && mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view";
   let questionText, answerElements, questionTextElement, answerTexts;
 
@@ -637,14 +1015,14 @@ async function processSingleQuestion(mcqViewElement, index, apiKey, preFetchedAi
     questionText = m.questionText;
     questionTextElement = m.questionTextElement;
     answerTexts = [
-      ...m.categories.map((c) => `[CATEGORY ${c.letter}] ${c.text}`),
+      ...m.categories.map((c) => `[CATEGORY CIRCLE ${c.letter}] ${c.text}`),
       ...m.options.map((o, i) => `[OPTION ${i + 1}] ${o.text}`),
     ];
     answerElements = [];
     if (questionText && !questionText.startsWith("Error") && m.categories.length && m.options.length) {
       questionText = `MATCHING QUESTION. ${questionText}\nCategories: ${m.categories
-        .map((c) => `${c.letter}=${c.text}`)
-        .join(" | ")}\nOptions: ${m.options.map((o, i) => `${i + 1}=${o.text}`).join(" | ")}\nReturn answer as 'A: <option text> /// B: <option text> /// ...' in category order.`;
+        .map((c) => `Circle ${c.letter}=${c.text}`)
+        .join(" | ")}\nOptions: ${m.options.map((o, i) => `${i + 1}=${o.text}`).join(" | ")}`;
     }
   } else {
     const ex = extractQuestionAndAnswers(mcqViewElement, index);
@@ -655,56 +1033,97 @@ async function processSingleQuestion(mcqViewElement, index, apiKey, preFetchedAi
   }
 
   updateUiAndLogsPostExtraction(aiAnswerDisplay, questionText, answerTexts, index);
-
-  // --- 4. UI Injection Logic ---
   injectUi(uiContainer, questionTextElement, mcqViewElement, uiContainerId, index);
 
-  // --- 5. Refresh Action and Initial Fetch/Status ---
-  refreshButton.addEventListener("click", () => 
-    handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDisplay, index)
+  refreshButton.addEventListener("click", () =>
+    handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDisplay, badge, mcqViewElement, index)
   );
 
-  // Handle AI answer display (pre-fetched or initial call)
+  autoSelectButton.addEventListener("click", async () => {
+    const currentText = aiAnswerDisplay.innerText || "";
+    await autoSelectOptionsInDom(mcqViewElement, currentText);
+  });
+
+  copyButton.addEventListener("click", () => {
+    const textToCopy = aiAnswerDisplay.innerText.replace("AI Suggestions:", "").replace("AI Suggestion:", "").trim();
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      copyButton.textContent = "Copied!";
+      setTimeout(() => (copyButton.textContent = "Copy"), 1500);
+    });
+  });
+
   if (preFetchedAiAnswer === "BATCH_PROCESSING_STARTED") {
     aiAnswerDisplay.textContent = "Batch processing... Please wait.";
-    console.debug(`NetAcad UI: Q${index + 1} waiting for batched AI answer.`);
-  } else if (preFetchedAiAnswer) { // An actual answer or error string is provided
+    badge.textContent = "Batching";
+    badge.style.color = "#38bdf8";
+  } else if (preFetchedAiAnswer) {
     if (preFetchedAiAnswer.toLowerCase().startsWith("error:")) {
-      // Improved error handling
-      const friendlyMsg = getFriendlyGeminiErrorMessage(preFetchedAiAnswer);
-      if (friendlyMsg) {
-        aiAnswerDisplay.textContent = friendlyMsg;
-      } else {
-        aiAnswerDisplay.textContent = preFetchedAiAnswer;
-      }
-      console.error(`NetAcad UI: Error displayed for Q${index + 1} from pre-fetched data: ${preFetchedAiAnswer}`);
+      badge.textContent = "Error";
+      badge.style.color = "#f87171";
+      badge.style.borderColor = "rgba(248, 113, 113, 0.3)";
+      aiAnswerDisplay.textContent = preFetchedAiAnswer;
     } else {
+      badge.textContent = "Ready";
+      badge.style.color = "#10b981";
+      badge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+
       const multiAnswerSeparator = " /// ";
+      aiAnswerDisplay.textContent = "";
       if (preFetchedAiAnswer.includes(multiAnswerSeparator)) {
-        const individualAnswers = preFetchedAiAnswer.split(multiAnswerSeparator).map(ans => ans.trim()).filter(ans => ans.length > 0);
-        if (individualAnswers.length > 0) {
-          aiAnswerDisplay.innerHTML = "AI Suggestions:<br />- " + individualAnswers.join("<br />- ");
-        } else {
-           aiAnswerDisplay.textContent = "AI Suggestion: Received multiple answer format but no valid content.";
-        }
+        const individualAnswers = preFetchedAiAnswer.split(multiAnswerSeparator).map((a) => a.trim()).filter(Boolean);
+        aiAnswerDisplay.appendChild(buildAnswerNode("AI Suggestions:", individualAnswers));
       } else {
-        aiAnswerDisplay.textContent = `AI Suggestion: ${preFetchedAiAnswer}`;
+        aiAnswerDisplay.appendChild(buildAnswerNode("AI Suggestion:", [preFetchedAiAnswer]));
+      }
+
+      const stored = await chrome.storage.sync.get(["autoSelect", "autoSubmit"]);
+      if (!isMatching && stored.autoSelect !== false) {
+        await autoSelectOptionsInDom(mcqViewElement, preFetchedAiAnswer);
+      }
+      if (!isMatching && stored.autoSubmit === true) {
+        autoSubmitQuestion(mcqViewElement);
       }
     }
-  } else { // No pre-fetched answer, proceed with individual fetch if Q/A is valid
-    if (
-      questionText !== "Question text not found" &&
-      !questionText.startsWith("Error:") &&
-      answerTexts.length > 0 &&
-      apiKey // Only try if API key is present
-    ) {
-      console.debug(`NetAcad UI: Q${index + 1} making individual call to AI (no pre-fetched answer).`);
-      await handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDisplay, index);
-    } else if (!apiKey && questionText !== "Question text not found" && !questionText.startsWith("Error:") && answerTexts.length > 0) {
-      aiAnswerDisplay.textContent = "Error: Gemini API Key not set in popup.";
-      console.warn(`NetAcad UI: Q${index + 1} cannot fetch AI answer - API key missing.`);
-    } else {
-      console.debug(`NetAcad UI: Q${index + 1} - Initial AI call skipped due to extraction issues or missing API key. Message: ${aiAnswerDisplay.textContent}`);
+  } else {
+    if (questionText !== "Question text not found" && !questionText.startsWith("Error:") && answerTexts.length > 0) {
+      await handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDisplay, badge, mcqViewElement, index);
     }
   }
+}
+
+const exportsList = {
+  createAiAssistantUI,
+  extractQuestionAndAnswers,
+  extractMatchingQuestion,
+  processAnswerElements,
+  dispatchFullClickSequence,
+  findExactMatchingElements,
+  processMatchingPairsSequentially,
+  autoCompleteVideosOnPage,
+  autoScrollModulePage,
+  parseThreeLevelCourseToC,
+  navigateToFirstIncompleteLevel3Item,
+  checkModuleCompletionStatus,
+  navigateToFirstIncompleteModule,
+  navigateToNextSubModule,
+  autoSelectOptionsInDom,
+  autoSubmitQuestion,
+  autoSubmitCurrentQuestion,
+  detectFinalSubmitPage,
+  confirmAndSubmitFinalAssessment,
+  clickQuestionTabByIndex,
+  clickNextQuestionButton,
+  clickNextQuestionTab,
+  updateUiAndLogsPostExtraction,
+  injectUi,
+  handleRefreshAction,
+  processSingleQuestion,
+};
+
+if (typeof window !== "undefined") {
+  Object.assign(window, exportsList);
+}
+
+if (typeof globalThis !== "undefined") {
+  Object.assign(globalThis, exportsList);
 }

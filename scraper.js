@@ -1,187 +1,443 @@
-// Constants for retry mechanism
 const MAX_SCRAPE_ATTEMPTS = 10;
 const SCRAPE_RETRY_DELAY_MS = 1500;
 
-async function scrapeData(currentAttempt = 1) {
-  console.debug(
-    `NetAcad Scraper (scraper.js): scrapeData attempt #${currentAttempt} of ${MAX_SCRAPE_ATTEMPTS}`
-  );
-
-  const storedData = await chrome.storage.sync.get(["geminiApiKey"]);
-  const apiKey = storedData.geminiApiKey;
-
-  let mcqViewElements = [];
-  let earlyExitReason = "";
-
-  try {
-    const appRoot = document.querySelector("app-root");
-    if (appRoot && appRoot.shadowRoot) {
-      const pageView = appRoot.shadowRoot.querySelector("page-view");
-      if (pageView && pageView.shadowRoot) {
-        const articleViews = pageView.shadowRoot.querySelectorAll("article-view");
-        if (articleViews && articleViews.length > 0) {
-          articleViews.forEach((articleView, i) => {
-            if (articleView.shadowRoot) {
-              const blockViews = articleView.shadowRoot.querySelectorAll("block-view");
-              blockViews.forEach((blockView, j) => {
-                if (blockView.shadowRoot) {
-                  const mcqView = blockView.shadowRoot.querySelector("mcq-view");
-                  if (mcqView) mcqViewElements.push(mcqView);
-                  const omv = blockView.shadowRoot.querySelector("object-matching-view");
-                  if (omv) mcqViewElements.push(omv);
-                }
-              });
-            }
-          });
-          if (mcqViewElements.length === 0) earlyExitReason = "Found article-view(s) but no mcq-view or object-matching-view elements.";
-        } else earlyExitReason = "page-view found, but no article-view elements.";
-      } else earlyExitReason = appRoot.shadowRoot.querySelector("page-view") ? "page-view found, but no shadowRoot." : "page-view not found in app-root.";
-    } else earlyExitReason = document.querySelector("app-root") ? "app-root found, but no shadowRoot." : "app-root not found.";
-  } catch (e) {
-    earlyExitReason = "Exception during shadow DOM traversal.";
-    console.error(`NetAcad Scraper (scraper.js): ${earlyExitReason}`, e);
+class LruCache {
+  constructor(maxSize = 50) {
+    this._max = maxSize;
+    this._map = new Map();
   }
-
-  if (currentAttempt === 1) {
-    document.querySelectorAll(".netacad-ai-assistant-ui[id^='netacad-ai-q-']").forEach((el) => el.remove());
-    mcqViewElements.forEach((mcqView) => {
-      if (mcqView && mcqView.shadowRoot) {
-        mcqView.shadowRoot.querySelectorAll(".netacad-ai-assistant-ui[id^='netacad-ai-q-']").forEach((el) => el.remove());
-      }
-    });
+  has(key) { return this._map.has(key); }
+  get(key) {
+    if (!this._map.has(key)) return undefined;
+    const val = this._map.get(key);
+    this._map.delete(key);
+    this._map.set(key, val);
+    return val;
   }
-
-  if (mcqViewElements.length === 0) {
-    let logMessage = `NetAcad Scraper (scraper.js): Attempt #${currentAttempt}: No mcq-view elements found.`;
-    if (earlyExitReason) logMessage += ` Reason: ${earlyExitReason}`;
-    else if (currentAttempt === 1) logMessage += ` Shadow DOM traversal completed, but no mcq-view tags were identified.`;
-    console.debug(logMessage);
-
-    if (currentAttempt < MAX_SCRAPE_ATTEMPTS) {
-      console.debug(`NetAcad Scraper (scraper.js): Will retry in ${SCRAPE_RETRY_DELAY_MS / 1000}s...`);
-      setTimeout(() => { window.scrapeData && window.scrapeData(currentAttempt + 1); }, SCRAPE_RETRY_DELAY_MS);
-      return false;
+  set(key, val) {
+    if (this._map.has(key)) this._map.delete(key);
+    this._map.set(key, val);
+    if (this._map.size > this._max) {
+      this._map.delete(this._map.keys().next().value);
     }
-    console.warn(`NetAcad Scraper (scraper.js): Max retry attempts reached. Failed to find mcq-view elements.`);
+  }
+}
+
+let isAutonomousRunning = false;
+let isAutonomousPaused = false;
+let isScrapeInFlight = false;
+let isCourseScrollerRunning = false;
+const apiAnswerCache = new LruCache(50);
+
+// Lightweight fingerprint: hash of question count + first chars of each question
+function getQuestionsFingerprint(questionsDataArray) {
+  if (!questionsDataArray || questionsDataArray.length === 0) return "";
+  return questionsDataArray
+    .map((q) => {
+      const qSnippet = q.question.trim().slice(0, 80);
+      const aSnippet = (q.answers || []).slice(0, 4).join("|").slice(0, 80);
+      return `${qSnippet}::${aSnippet}`;
+    })
+    .join("||");
+}
+
+// Resolve a function from window/globalThis by name
+function resolveFn(fnName) {
+  try {
+    if (typeof window !== "undefined" && typeof window[fnName] === "function") return window[fnName];
+    if (typeof globalThis !== "undefined" && typeof globalThis[fnName] === "function") return globalThis[fnName];
+  } catch (_) {}
+  return null;
+}
+
+// Wait helper that respects pause/stop state
+async function waitMs(ms) {
+  const step = 100;
+  let elapsed = 0;
+  while (elapsed < ms) {
+    if (!isAutonomousRunning) return;
+    while (isAutonomousPaused && isAutonomousRunning) {
+      await new Promise((r) => setTimeout(r, step));
+    }
+    await new Promise((r) => setTimeout(r, Math.min(step, ms - elapsed)));
+    elapsed += step;
+  }
+}
+
+function pauseAutonomousLoop() {
+  isAutonomousPaused = true;
+  console.log("NetAcad AutoAnswer: Auto-Pilot PAUSED ⏸️");
+  return { isRunning: isAutonomousRunning, isPaused: isAutonomousPaused };
+}
+
+function resumeAutonomousLoop() {
+  isAutonomousPaused = false;
+  console.log("NetAcad AutoAnswer: Auto-Pilot RESUMED ▶️");
+  return { isRunning: isAutonomousRunning, isPaused: isAutonomousPaused };
+}
+
+function toggleAutonomousPause() {
+  return isAutonomousPaused ? resumeAutonomousLoop() : pauseAutonomousLoop();
+}
+
+function stopAutonomousLoop() {
+  isAutonomousRunning = false;
+  isAutonomousPaused = false;
+  console.log("NetAcad AutoAnswer: Auto-Pilot STOPPED ⏹️");
+  return { isRunning: false, isPaused: false };
+}
+
+function stopCourseScrollerLoop() {
+  isCourseScrollerRunning = false;
+  console.log("NetAcad AutoAnswer: Course Scroller STOPPED ⏹️");
+  return { isRunning: false };
+}
+
+// ─────────────────────────────────────────────
+// FUNCTION 1: QUIZ SCRAPER
+// ─────────────────────────────────────────────
+async function scrapeData(currentAttempt = 1) {
+  if (isScrapeInFlight) {
+    console.debug("NetAcad Scraper: Scrape already in flight. Skipping duplicate trigger.");
     return false;
   }
 
-  console.debug(
-    `NetAcad Scraper (scraper.js): Found ${mcqViewElements.length} mcq-view element(s). Attempting to process...`
-  );
+  isScrapeInFlight = true;
 
-  if (!apiKey) {
-    console.warn("NetAcad Scraper (scraper.js): Gemini API Key not found. Displaying message in UI.");
-    for (const [index, mcqViewElement] of mcqViewElements.entries()) {
-      // The third argument to processSingleQuestion is apiKey, the fourth is preFetchedAiAnswer
-      await processSingleQuestion(mcqViewElement, index, null, "Error: Gemini API Key not set in popup.");
+  try {
+    console.debug(`NetAcad Scraper: scrapeData attempt #${currentAttempt} of ${MAX_SCRAPE_ATTEMPTS}`);
+
+    const getCfgFn = resolveFn("getProviderConfig") || (typeof getProviderConfig === "function" ? getProviderConfig : null);
+    const providerCfg = getCfgFn ? await getCfgFn() : { apiKey: "" };
+    const apiKey = providerCfg.apiKey;
+
+    const processSingleQuestionFn = resolveFn("processSingleQuestion") || (typeof processSingleQuestion === "function" ? processSingleQuestion : null);
+    const extractMatchingQuestionFn = resolveFn("extractMatchingQuestion") || (typeof extractMatchingQuestion === "function" ? extractMatchingQuestion : null);
+    const extractQuestionAndAnswersFn = resolveFn("extractQuestionAndAnswers") || (typeof extractQuestionAndAnswers === "function" ? extractQuestionAndAnswers : null);
+    const processAnswerElementsFn = resolveFn("processAnswerElements") || (typeof processAnswerElements === "function" ? processAnswerElements : null);
+    const getAiAnswersForBatchFn = resolveFn("getAiAnswersForBatch") || (typeof getAiAnswersForBatch === "function" ? getAiAnswersForBatch : null);
+
+    if (!processSingleQuestionFn) {
+      console.error("NetAcad Scraper: processSingleQuestion function not found.");
+      return false;
     }
-    return true; // Processed (by showing error)
-  }
 
-  const allQuestionsData = [];
-  for (const [index, mcqViewElement] of mcqViewElements.entries()) {
-    const isMatching = mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view";
+    // --- Shadow DOM Traversal ---
+    let mcqViewElements = [];
+    let earlyExitReason = "";
 
-    if (isMatching) {
-      if (typeof extractMatchingQuestion !== "function") {
-        console.error("NetAcad Scraper: extractMatchingQuestion missing!");
-        await processSingleQuestion(mcqViewElement, index, apiKey, "Error: Core UI function (matching extract) missing.");
+    try {
+      const appRoot = document.querySelector("app-root");
+      if (appRoot && appRoot.shadowRoot) {
+        const pageView = appRoot.shadowRoot.querySelector("page-view");
+        if (pageView && pageView.shadowRoot) {
+          const articleViews = pageView.shadowRoot.querySelectorAll("article-view");
+          if (articleViews && articleViews.length > 0) {
+            articleViews.forEach((articleView) => {
+              if (articleView.shadowRoot) {
+                articleView.shadowRoot.querySelectorAll("block-view").forEach((blockView) => {
+                  if (blockView.shadowRoot) {
+                    const mcqView = blockView.shadowRoot.querySelector("mcq-view");
+                    if (mcqView) mcqViewElements.push(mcqView);
+                    const omv = blockView.shadowRoot.querySelector("object-matching-view");
+                    if (omv) mcqViewElements.push(omv);
+                  }
+                });
+              }
+            });
+            if (mcqViewElements.length === 0) earlyExitReason = "No mcq-view or object-matching-view inside article-view(s).";
+          } else earlyExitReason = "No article-view elements inside page-view.";
+        } else earlyExitReason = "page-view not found or has no shadowRoot.";
+      } else earlyExitReason = "app-root not found or has no shadowRoot.";
+    } catch (e) {
+      earlyExitReason = "Exception during shadow DOM traversal.";
+      console.error(`NetAcad Scraper: ${earlyExitReason}`, e);
+    }
+
+    // Clean up stale UI panels on fresh scrape
+    if (currentAttempt === 1 && !isAutonomousRunning) {
+      document.querySelectorAll(".netacad-ai-assistant-ui[id^='netacad-ai-q-']").forEach((el) => el.remove());
+      mcqViewElements.forEach((mcqView) => {
+        if (mcqView?.shadowRoot) {
+          mcqView.shadowRoot.querySelectorAll(".netacad-ai-assistant-ui[id^='netacad-ai-q-']").forEach((el) => el.remove());
+        }
+      });
+    }
+
+    if (mcqViewElements.length === 0) {
+      console.debug(`NetAcad Scraper: Attempt #${currentAttempt} — ${earlyExitReason}`);
+      if (currentAttempt < MAX_SCRAPE_ATTEMPTS) {
+        isScrapeInFlight = false;
+        await new Promise((r) => setTimeout(r, SCRAPE_RETRY_DELAY_MS));
+        return scrapeData(currentAttempt + 1);
+      }
+      console.warn("NetAcad Scraper: Max retry attempts reached. No questions found.");
+      return false;
+    }
+
+    console.debug(`NetAcad Scraper: Found ${mcqViewElements.length} question element(s).`);
+
+    if (!apiKey) {
+      for (const [index, mcqViewElement] of mcqViewElements.entries()) {
+        await processSingleQuestionFn(mcqViewElement, index, null,
+          `Error: API Key for ${providerCfg.provider || "selected provider"} is not set in extension popup.`);
+      }
+      return true;
+    }
+
+    // --- Extract question data ---
+    const allQuestionsData = [];
+    for (const [index, mcqViewElement] of mcqViewElements.entries()) {
+      const isMatching = mcqViewElement.tagName?.toLowerCase() === "object-matching-view";
+
+      if (isMatching) {
+        if (!extractMatchingQuestionFn) {
+          await processSingleQuestionFn(mcqViewElement, index, apiKey, "Error: extractMatchingQuestion missing.");
+          continue;
+        }
+        const m = extractMatchingQuestionFn(mcqViewElement, index);
+        if (m.questionText && !m.questionText.startsWith("Error") && m.categories.length > 0 && m.options.length > 0) {
+          const formattedQuestion = `MATCHING QUESTION. ${m.questionText}
+Category circles (you must match each letter):
+${m.categories.map((c) => `  ${c.letter}: ${c.text}`).join("\n")}
+Available option items (match each circle to one of these):
+${m.options.map((o) => `  - ${o.text}`).join("\n")}`;
+          allQuestionsData.push({
+            question: formattedQuestion,
+            answers: m.options.map((o) => o.text),
+            mcqViewElement,
+            originalIndex: index,
+          });
+        } else {
+          await processSingleQuestionFn(mcqViewElement, index, apiKey, m.questionText);
+        }
         continue;
       }
-      const m = extractMatchingQuestion(mcqViewElement, index);
-      if (m.questionText && !m.questionText.startsWith("Error") && m.categories.length > 0 && m.options.length > 0) {
-        const formattedQuestion = `MATCHING QUESTION. ${m.questionText}\nCategories: ${m.categories
-          .map((c) => `${c.letter}=${c.text}`)
-          .join(" | ")}\nOptions: ${m.options.map((o, i) => `${i + 1}=${o.text}`).join(" | ")}\nReturn answer as 'A: <option text> /// B: <option text> /// ...' in category order, using the EXACT option texts.`;
-        const answerTexts = [
-          ...m.categories.map((c) => `[CATEGORY ${c.letter}] ${c.text}`),
-          ...m.options.map((o, i) => `[OPTION ${i + 1}] ${o.text}`),
-        ];
+
+      if (!extractQuestionAndAnswersFn || !processAnswerElementsFn) {
+        await processSingleQuestionFn(mcqViewElement, index, apiKey, "Error: extraction functions missing.");
+        continue;
+      }
+
+      const extracted = extractQuestionAndAnswersFn(mcqViewElement, index);
+      const answerTexts = processAnswerElementsFn(extracted.answerElements, index);
+
+      if (extracted.questionText && !extracted.questionText.startsWith("Error") && answerTexts.length > 0) {
         allQuestionsData.push({
-          question: formattedQuestion,
+          question: extracted.questionText,
           answers: answerTexts,
-          mcqViewElement: mcqViewElement,
+          mcqViewElement,
           originalIndex: index,
-          questionTextElement: m.questionTextElement,
         });
       } else {
-        console.warn(`NetAcad Scraper: Failed to extract matching Q ${index + 1}.`);
-        await processSingleQuestion(mcqViewElement, index, apiKey, m.questionText);
+        await processSingleQuestionFn(mcqViewElement, index, apiKey, extracted.questionText);
       }
-      continue;
     }
 
-    // extractQuestionAndAnswers is in ui.js and should be globally available.
-    // It returns { questionText, answerElements, questionTextElement }
-    if (typeof extractQuestionAndAnswers !== 'function') {
-        console.error("NetAcad Scraper (scraper.js): extractQuestionAndAnswers function is not available!");
-        // Fallback: process each question individually with an error message, or just skip UI update
-        await processSingleQuestion(mcqViewElement, index, apiKey, "Error: Core UI function (extract) missing.");
-        continue;
-    }
-    const extractionResult = extractQuestionAndAnswers(mcqViewElement, index);
-    const answerTexts = processAnswerElements(extractionResult.answerElements, index);
+    if (allQuestionsData.length === 0) return true;
 
-    if (extractionResult.questionText && !extractionResult.questionText.startsWith("Error") && answerTexts.length > 0) {
-      allQuestionsData.push({
-        question: extractionResult.questionText,
-        answers: answerTexts,
-        mcqViewElement: mcqViewElement,
-        originalIndex: index,
-        questionTextElement: extractionResult.questionTextElement // Needed for UI injection by processSingleQuestion
-      });
-    } else {
-      // If extraction fails for a question, still call processSingleQuestion to render its UI with the error.
-      // The error from extractionResult.questionText or lack of answers will be handled by processSingleQuestion.
-      console.warn(`NetAcad Scraper (scraper.js): Failed to extract valid Q&A for question ${index + 1}. Will let processSingleQuestion handle UI error.`);
-      await processSingleQuestion(mcqViewElement, index, apiKey, extractionResult.questionText); // Pass the extraction error
-    }
-  }
-
-  if (allQuestionsData.length > 0) {
-    console.debug(`NetAcad Scraper (scraper.js): Extracted ${allQuestionsData.length} valid questions for batch API call.`);
-    const questionsForBatchApi = allQuestionsData.map(q => ({ question: q.question, answers: q.answers }));
-    
-    // Call processSingleQuestion for each item to set up initial UI (e.g., "Processing batch...")
-    // BEFORE making the batch API call.
-    for (const questionData of allQuestionsData) {
-        // Pass a specific message to indicate batch processing is starting
-        // processSingleQuestion will need to handle this initial state message.
-        await processSingleQuestion(questionData.mcqViewElement, questionData.originalIndex, apiKey, "BATCH_PROCESSING_STARTED");
+    // --- Cache check ---
+    const fingerprint = `${providerCfg.provider}:${getQuestionsFingerprint(allQuestionsData)}`;
+    if (apiAnswerCache.has(fingerprint)) {
+      console.debug("NetAcad Scraper: Cache hit — skipping API call.");
+      const cached = apiAnswerCache.get(fingerprint);
+      for (let i = 0; i < allQuestionsData.length; i++) {
+        await processSingleQuestionFn(allQuestionsData[i].mcqViewElement, allQuestionsData[i].originalIndex, apiKey, cached[i]);
+      }
+      return true;
     }
 
-    const batchApiResponse = await getAiAnswersForBatch(questionsForBatchApi, apiKey);
-    let batchedAnswers = [];
-    let batchError = null;
+    // --- Batch API call ---
+    for (const qd of allQuestionsData) {
+      await processSingleQuestionFn(qd.mcqViewElement, qd.originalIndex, apiKey, "BATCH_PROCESSING_STARTED");
+    }
+
+    const questionsForPrompt = allQuestionsData.map((q) => ({ question: q.question, answers: q.answers }));
+    const batchApiResponse = getAiAnswersForBatchFn
+      ? await getAiAnswersForBatchFn(questionsForPrompt, apiKey)
+      : { error: "getAiAnswersForBatch function not found" };
 
     if (batchApiResponse.error) {
-      console.error("NetAcad Scraper (scraper.js): Error from batch API call:", batchApiResponse.error);
-      batchError = batchApiResponse.error;
-    } else if (batchApiResponse.answers && batchApiResponse.answers.length === allQuestionsData.length) {
-      batchedAnswers = batchApiResponse.answers;
-      console.debug("NetAcad Scraper (scraper.js): Successfully received batched answers.");
+      console.error("NetAcad Scraper: Batch API Error:", batchApiResponse.error);
+      for (let i = 0; i < allQuestionsData.length; i++) {
+        await processSingleQuestionFn(allQuestionsData[i].mcqViewElement, allQuestionsData[i].originalIndex, apiKey, batchApiResponse.error);
+      }
     } else {
-      console.error("NetAcad Scraper (scraper.js): Mismatch in batched answers length or no answers received.");
-      batchError = "Error: AI response for batch was incomplete or malformed.";
-      if(batchApiResponse.answers) batchedAnswers = batchApiResponse.answers; // Use partial if available
+      const answers = batchApiResponse.answers;
+      apiAnswerCache.set(fingerprint, answers);
+      for (let i = 0; i < allQuestionsData.length; i++) {
+        const answer = answers[i] || "Error: No answer for this question in batch response.";
+        await processSingleQuestionFn(allQuestionsData[i].mcqViewElement, allQuestionsData[i].originalIndex, apiKey, answer);
+      }
     }
 
-    // Now, update each UI with its specific answer or the batch error
-    for (let i = 0; i < allQuestionsData.length; i++) {
-      const questionData = allQuestionsData[i];
-      let finalAnswerToShow = batchError ? batchError : (batchedAnswers[i] || "Error: No specific answer in batch response.");
-      // Re-call processSingleQuestion or a dedicated update function. 
-      // For simplicity, re-calling processSingleQuestion with the fetched answer.
-      // It will re-extract, but then display the provided answer.
-      // A more optimized way would be to have a separate UI update function.
-      await processSingleQuestion(questionData.mcqViewElement, questionData.originalIndex, apiKey, finalAnswerToShow);
-    }
-  } else {
-    console.debug("NetAcad Scraper (scraper.js): No valid questions extracted to send for batch processing.");
-    // If there were mcqViewElements but none yielded valid Q&A, their UIs would have been handled
-    // in the extraction loop above, displaying individual extraction errors via processSingleQuestion.
+    return true;
+  } finally {
+    isScrapeInFlight = false;
+  }
+}
+
+// ─────────────────────────────────────────────
+// FUNCTION 2: QUIZ AUTO-PILOT LOOP
+// ─────────────────────────────────────────────
+async function runAutonomousLoop() {
+  if (isAutonomousRunning) {
+    if (isAutonomousPaused) resumeAutonomousLoop();
+    else console.debug("NetAcad AutoAnswer: Quiz Auto-Pilot already active.");
+    return;
   }
 
-  return true;
-} 
+  isAutonomousRunning = true;
+  isAutonomousPaused = false;
+  console.log("NetAcad AutoAnswer: Starting Quiz Auto-Pilot...");
+
+  let loopIteration = 0;
+  const maxLoops = 45;
+
+  try {
+    while (isAutonomousRunning && loopIteration < maxLoops) {
+      await waitMs(0); // respect pause/stop
+      if (!isAutonomousRunning) break;
+
+      console.debug(`NetAcad AutoAnswer: Quiz step #${loopIteration + 1}`);
+
+      const detectFn = resolveFn("detectFinalSubmitPage");
+      const confirmFn = resolveFn("confirmAndSubmitFinalAssessment");
+
+      // Check for final submit page
+      if (detectFn && detectFn()) {
+        console.log("NetAcad AutoAnswer: Final submit page detected — confirming & submitting.");
+        if (confirmFn) confirmFn();
+        break;
+      }
+
+      // Answer questions on current view
+      await scrapeData();
+      await waitMs(1200);
+
+      if (!isAutonomousRunning) break;
+
+      // Submit per-question if available
+      const submitQuestionFn = resolveFn("autoSubmitQuestion");
+      const submitCurrentFn = resolveFn("autoSubmitCurrentQuestion");
+      if (submitQuestionFn) {
+        submitQuestionFn();
+      } else if (submitCurrentFn) {
+        submitCurrentFn();
+      }
+      await waitMs(800);
+
+      // Check final page again after submit
+      if (detectFn && detectFn()) {
+        if (confirmFn) confirmFn();
+        break;
+      }
+
+      await waitMs(200);
+      if (!isAutonomousRunning) break;
+
+      // Advance to next question using Next button (strictly avoiding Q tabs)
+      loopIteration++;
+      const nextBtnFn = resolveFn("clickNextQuestionButton") || resolveFn("clickNextQuestionTab");
+
+      let moved = nextBtnFn ? nextBtnFn() : false;
+
+      if (!moved) {
+        console.debug("NetAcad AutoAnswer: No Next button found — checking for final submission page.");
+        if (detectFn && detectFn()) {
+          if (confirmFn) confirmFn();
+          break;
+        }
+        await waitMs(1000);
+      } else {
+        await waitMs(1400);
+      }
+    }
+  } finally {
+    isAutonomousRunning = false;
+    isAutonomousPaused = false;
+    console.log("NetAcad AutoAnswer: Quiz Auto-Pilot finished.");
+  }
+}
+
+// ─────────────────────────────────────────────
+// FUNCTION 3: COURSE SCROLLER LOOP (SEPARATE)
+// Scrolls pages, fast-forwards videos, navigates 3-level ToC sub-topics
+// ─────────────────────────────────────────────
+async function runCourseScrollerLoop() {
+  if (isCourseScrollerRunning) {
+    console.debug("NetAcad AutoAnswer: Course Scroller already running.");
+    return;
+  }
+
+  isCourseScrollerRunning = true;
+  console.log("NetAcad AutoAnswer: Starting Course Scroller...");
+
+  const maxSubTopics = 200; // hard cap
+  let iterations = 0;
+
+  while (isCourseScrollerRunning && iterations < maxSubTopics) {
+    if (!isCourseScrollerRunning) break;
+
+    console.debug(`NetAcad AutoAnswer: Course Scroller step #${iterations + 1}`);
+
+    // 1. Fast-forward any videos on current page
+    const videoFn = resolveFn("autoCompleteVideosOnPage");
+    if (videoFn) {
+      const count = videoFn();
+      if (count > 0) {
+        console.log(`NetAcad AutoAnswer: Fast-forwarded ${count} video(s).`);
+        // Wait for video "ended" event to register with the LMS
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    }
+
+    // 2. Smooth-scroll full page (triggers read-completion trackers)
+    const scrollFn = resolveFn("autoScrollModulePage");
+    if (scrollFn) await scrollFn();
+
+    // Wait for page scroll & LMS tracking to settle
+    await new Promise((r) => setTimeout(r, 600));
+
+    if (!isCourseScrollerRunning) break;
+
+    // 3. Navigate to the next incomplete Level-3 sub-topic from the 3-level ToC
+    const navFn = resolveFn("navigateToFirstIncompleteLevel3Item");
+    const fallbackNavFn = resolveFn("navigateToNextSubModule");
+
+    let navigated = navFn ? navFn() : false;
+    if (!navigated && fallbackNavFn) {
+      navigated = fallbackNavFn();
+    }
+
+    if (!navigated) {
+      console.log("NetAcad AutoAnswer: Course Scroller — all sub-topics completed! 🎉");
+      break;
+    }
+
+    // Wait for next page to load
+    await new Promise((r) => setTimeout(r, 2000));
+    iterations++;
+  }
+
+  isCourseScrollerRunning = false;
+  console.log("NetAcad AutoAnswer: Course Scroller finished.");
+}
+
+const scraperExports = {
+  scrapeData,
+  runAutonomousLoop,
+  runCourseScrollerLoop,
+  pauseAutonomousLoop,
+  resumeAutonomousLoop,
+  toggleAutonomousPause,
+  stopAutonomousLoop,
+  stopCourseScrollerLoop,
+};
+
+if (typeof window !== "undefined") {
+  Object.assign(window, scraperExports);
+}
+if (typeof globalThis !== "undefined") {
+  Object.assign(globalThis, scraperExports);
+}

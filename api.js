@@ -17,11 +17,11 @@ function getProviderConfig() {
         const modelField = `${provider}Model`;
 
         const defaults = {
-          gemini: "gemini-1.5-flash",
+          gemini: "gemini-3.6-flash",
           groq: "llama-3.3-70b-versatile",
           openai: "gpt-4o-mini",
           anthropic: "claude-3-5-haiku-latest",
-          openrouter: "openai/gpt-4o-mini",
+          openrouter: "google/gemini-2.5-flash",
         };
 
         resolve({
@@ -136,7 +136,7 @@ function safeParseJsonResponse(rawText) {
 // --- Provider Implementations with Structured Output (JSON mode) ---
 
 async function callGeminiApi(prompt, apiKey, modelName, useJsonMode = false) {
-  const model = modelName || "gemini-1.5-flash";
+  const model = modelName || "gemini-3.6-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const payload = {

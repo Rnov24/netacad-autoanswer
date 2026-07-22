@@ -19,31 +19,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const MODEL_PRESETS = {
     gemini: [
-      { value: "gemini-1.5-flash",   label: "gemini-1.5-flash (default)" },
-      { value: "gemini-2.0-flash",   label: "gemini-2.0-flash" },
-      { value: "gemini-1.5-pro",     label: "gemini-1.5-pro" },
+      { value: "gemini-3.6-flash",       label: "gemini-3.6-flash (default)" },
+      { value: "gemini-3.5-flash",       label: "gemini-3.5-flash" },
+      { value: "gemini-3.5-flash-lite",  label: "gemini-3.5-flash-lite" },
+      { value: "gemini-3.1-pro-preview", label: "gemini-3.1-pro-preview" },
     ],
     groq: [
       { value: "llama-3.3-70b-versatile",       label: "llama-3.3-70b (default)" },
+      { value: "llama-3.1-8b-instant",          label: "llama-3.1-8b-instant" },
+      { value: "openai/gpt-oss-120b",           label: "gpt-oss-120b" },
       { value: "deepseek-r1-distill-llama-70b", label: "deepseek-r1-llama-70b" },
-      { value: "mixtral-8x7b-32768",            label: "mixtral-8x7b" },
     ],
     openai: [
-      { value: "gpt-4o-mini", label: "gpt-4o-mini (default)" },
-      { value: "gpt-4o",      label: "gpt-4o" },
-      { value: "o3-mini",     label: "o3-mini" },
+      { value: "gpt-4o-mini",     label: "gpt-4o-mini (default)" },
+      { value: "gpt-4o",          label: "gpt-4o" },
+      { value: "gpt-5.6-terra",   label: "gpt-5.6-terra" },
+      { value: "o4-mini",         label: "o4-mini" },
+      { value: "o3-mini",         label: "o3-mini" },
     ],
     anthropic: [
       { value: "claude-3-5-haiku-latest",  label: "claude-3.5-haiku (default)" },
-      { value: "claude-3-5-sonnet-latest", label: "claude-3.5-sonnet" },
-      { value: "claude-3-opus-latest",     label: "claude-3-opus" },
+      { value: "claude-3-7-sonnet-latest", label: "claude-3.7-sonnet" },
+      { value: "claude-sonnet-5",          label: "claude-sonnet-5" },
+      { value: "claude-opus-4-8",          label: "claude-opus-4.8" },
     ],
     openrouter: [
-      { value: "openai/gpt-4o-mini",                     label: "gpt-4o-mini (default)" },
-      { value: "anthropic/claude-3.5-sonnet",            label: "claude-3.5-sonnet" },
-      { value: "google/gemini-2.5-flash",                label: "gemini-2.5-flash" },
-      { value: "meta-llama/llama-3.3-70b-instruct",      label: "llama-3.3-70b" },
-      { value: "deepseek/deepseek-r1",                   label: "deepseek-r1" },
+      { value: "google/gemini-2.5-flash",           label: "gemini-2.5-flash (default)" },
+      { value: "openai/gpt-4o-mini",                label: "gpt-4o-mini" },
+      { value: "anthropic/claude-3.7-sonnet",       label: "claude-3.7-sonnet" },
+      { value: "meta-llama/llama-3.3-70b-instruct", label: "llama-3.3-70b" },
+      { value: "deepseek/deepseek-chat",            label: "deepseek-v3" },
+      { value: "deepseek/deepseek-r1",              label: "deepseek-r1" },
     ],
   };
 

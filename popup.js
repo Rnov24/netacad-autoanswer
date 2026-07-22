@@ -3,6 +3,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const apiKeyLabel      = document.getElementById("apiKeyLabel");
   const apiKeyInput      = document.getElementById("apiKey");
   const modelSelect      = document.getElementById("modelSelect");
+  const customModelGroup = document.getElementById("customModelGroup");
+  const customModelInput = document.getElementById("customModelInput");
   const saveBtn          = document.getElementById("saveKey");
   const processPageBtn   = document.getElementById("processPage");
   const autoScrollBtn    = document.getElementById("autoScrollBtn");
@@ -65,14 +67,27 @@ document.addEventListener("DOMContentLoaded", () => {
       modelSelect.appendChild(opt);
     });
 
+    const customOpt = document.createElement("option");
+    customOpt.value = "custom";
+    customOpt.textContent = "✨ Custom Model (Type manually)";
+    modelSelect.appendChild(customOpt);
+
     const saved = storage[`${provider}Model`];
     if (saved) {
-      if (![...modelSelect.options].some((o) => o.value === saved)) {
-        const custom = document.createElement("option");
-        custom.value = saved; custom.textContent = `${saved} (custom)`;
-        modelSelect.appendChild(custom);
+      const isPreset = (MODEL_PRESETS[provider] || []).some((o) => o.value === saved);
+      if (isPreset) {
+        modelSelect.value = saved;
+        customModelGroup.style.display = "none";
+        customModelInput.value = "";
+      } else {
+        modelSelect.value = "custom";
+        customModelInput.value = saved;
+        customModelGroup.style.display = "block";
       }
-      modelSelect.value = saved;
+    } else {
+      modelSelect.value = (MODEL_PRESETS[provider] || [])[0]?.value || "custom";
+      customModelGroup.style.display = "none";
+      customModelInput.value = "";
     }
   }
 
@@ -99,6 +114,15 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   providerSelect.addEventListener("change", () => updateProviderUI(providerSelect.value));
+
+  modelSelect.addEventListener("change", () => {
+    if (modelSelect.value === "custom") {
+      customModelGroup.style.display = "block";
+      customModelInput.focus();
+    } else {
+      customModelGroup.style.display = "none";
+    }
+  });
 
   // Persist toggles immediately on change
   autoSelectToggle.addEventListener("change",      () => chrome.storage.sync.set({ autoSelect: autoSelectToggle.checked }));
@@ -136,7 +160,15 @@ document.addEventListener("DOMContentLoaded", () => {
   saveBtn.addEventListener("click", () => {
     const provider = providerSelect.value;
     const apiKey   = apiKeyInput.value.trim();
-    const model    = modelSelect.value;
+    let model      = modelSelect.value;
+
+    if (model === "custom") {
+      model = customModelInput.value.trim();
+      if (!model) {
+        setStatus("Please enter a custom model name.", "#f87171", 3000);
+        return;
+      }
+    }
 
     if (!apiKey) {
       setStatus(`Please enter a ${PROVIDER_LABELS[provider]} API key.`, "#f87171", 3000);

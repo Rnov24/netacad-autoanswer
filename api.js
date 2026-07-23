@@ -323,6 +323,13 @@ async function queryAiProvider(prompt, overrideApiKey = null, useJsonMode = fals
   }
 }
 
+function cleanOptionPrefix(str) {
+  if (!str || typeof str !== "string") return str;
+  const trimmed = str.trim();
+  if (/^[A-Z]:\s+/i.test(trimmed)) return trimmed;
+  return trimmed.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
+}
+
 async function getAiAnswer(questionText, answerTexts, overrideApiKey = null) {
   try {
     const prompt = buildSinglePrompt(questionText, answerTexts);
@@ -335,16 +342,16 @@ async function getAiAnswer(questionText, answerTexts, overrideApiKey = null) {
           console.debug(`NetAcad AI Engine: Analyzed Question Type "${parsed.type}"`);
         }
         if (typeof parsed.answer === "string") {
-          return parsed.answer.trim();
+          return cleanOptionPrefix(parsed.answer);
         }
       }
       if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "string") {
-        return parsed[0].trim();
+        return cleanOptionPrefix(parsed[0]);
       }
     } catch (_) {
-      return rawResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+      return cleanOptionPrefix(rawResponse.replace(/```json/g, "").replace(/```/g, ""));
     }
-    return rawResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+    return cleanOptionPrefix(rawResponse.replace(/```json/g, "").replace(/```/g, ""));
   } catch (error) {
     console.error("NetAcad API Engine: Single question error:", error);
     return `Error calling AI API: ${error.message}`;
@@ -374,10 +381,10 @@ async function getAiAnswersForBatch(questionsWithAnswers, overrideApiKey = null)
         if (item.type) {
           console.debug(`NetAcad AI Engine: Analyzed Question Type "${item.type}"`);
         }
-        if (typeof item.answer === "string") return item.answer.trim();
+        if (typeof item.answer === "string") return cleanOptionPrefix(item.answer);
       }
-      if (typeof item === "string") return item.trim();
-      return String(item || "");
+      if (typeof item === "string") return cleanOptionPrefix(item);
+      return cleanOptionPrefix(String(item || ""));
     });
 
     // Validate length matches — pad with error string if AI returned fewer answers

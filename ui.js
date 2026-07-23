@@ -164,21 +164,55 @@ function extractQuestionAndAnswers(mcqViewElement, index) {
 
       questionTextElement =
         root.querySelector("div.component__body-inner.mcq__body-inner") ||
+        root.querySelector("div.component__body") ||
         root.querySelector(".mcq__prompt") ||
         root.querySelector(".prompt");
 
+      let promptText = "";
       if (questionTextElement) {
-        questionText = questionTextElement.innerText.trim();
+        promptText = questionTextElement.innerText.trim();
       } else {
         const potentialElements = Array.from(root.querySelectorAll("div, p, span"));
         for (const el of potentialElements) {
           const text = el.innerText.trim();
           if (text.length > 20) {
-            questionText = text;
+            promptText = text;
             questionTextElement = el;
             break;
           }
         }
+      }
+
+      // Check for code blocks, pre/code tags, syntax highlighters inside root or parent block-view/article-view
+      let searchScopes = [root, mcqViewElement.shadowRoot];
+      if (mcqViewElement.getRootNode && mcqViewElement.getRootNode() instanceof ShadowRoot) {
+        searchScopes.push(mcqViewElement.getRootNode());
+      }
+
+      const codeSnippets = [];
+      searchScopes.forEach((scope) => {
+        if (!scope) return;
+        const codeEls = Array.from(scope.querySelectorAll("pre, code, [class*='code'], [class*='snippet'], textarea, table, .syntax-highlighter, figure"));
+        codeEls.forEach((c) => {
+          const cText = (c.innerText || c.textContent || "").trim();
+          if (cText.length > 5 && !promptText.includes(cText) && !codeSnippets.includes(cText)) {
+            codeSnippets.push(cText);
+          }
+        });
+
+        const imgEls = Array.from(scope.querySelectorAll("img[alt]"));
+        imgEls.forEach((img) => {
+          const alt = (img.getAttribute("alt") || "").trim();
+          if (alt && alt.length > 3 && !promptText.includes(alt) && !codeSnippets.includes(`[Image Description: ${alt}]`)) {
+            codeSnippets.push(`[Image Description: ${alt}]`);
+          }
+        });
+      });
+
+      if (codeSnippets.length > 0) {
+        questionText = `${promptText}\n\nCode / Reference:\n${codeSnippets.join("\n\n")}`;
+      } else {
+        questionText = promptText || "Question text not found";
       }
 
       answerElements = mcqViewElement.shadowRoot.querySelectorAll(".mcq__item-label.js-item-label, .mcq__item, label");
@@ -658,6 +692,13 @@ function navigateToNextSubModule() {
   return navigateToFirstIncompleteModule();
 }
 
+function cleanOptionTextForMatch(text) {
+  if (!text || typeof text !== "string") return "";
+  let clean = text.trim();
+  clean = clean.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
+  return clean.toLowerCase();
+}
+
 async function autoSelectOptionsInDom(mcqViewElement, answerText) {
   if (!mcqViewElement || !answerText || answerText.toLowerCase().startsWith("error:")) return;
 
@@ -673,43 +714,78 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
       return;
     }
 
-    const targetAnswers = answerText.split(" /// ").map((a) => a.trim().toLowerCase()).filter(Boolean);
+    const rawAnswers = answerText.split(" /// ").map((a) => a.trim()).filter(Boolean);
+    const targetAnswers = rawAnswers.map((a) => cleanOptionTextForMatch(a));
+
     const baseView = sr.querySelector('base-view[type="component"]');
     const searchRoot = (baseView && baseView.shadowRoot) ? baseView.shadowRoot : sr;
 
-    const candidateNodes = [
-      ...Array.from(sr.querySelectorAll(".mcq__item-label, .mcq__item, label, mat-checkbox, mat-radio-button, .component__option")),
-      ...Array.from(searchRoot.querySelectorAll(".mcq__item-label, .mcq__item, label, mat-checkbox, mat-radio-button, .component__option")),
-    ];
+    // Query specific choice option elements (preferring leaf/option items over container wrappers)
+    let optionNodes = Array.from(searchRoot.querySelectorAll("mat-radio-button, mat-checkbox, .component__option, .mcq__item, label[for]"));
+    if (optionNodes.length === 0) {
+      optionNodes = Array.from(searchRoot.querySelectorAll(".mcq__item-label, label, input[type='radio'], input[type='checkbox']"));
+    }
 
-    const uniqueNodes = Array.from(new Set(candidateNodes));
+    // Build parsed candidates list
+    const parsedCandidates = optionNodes.map((node) => {
+      const labelEl = node.querySelector(".mcq__item-label, .mat-radio-label, .mat-checkbox-label, label, span") || node;
+      const rawText = (labelEl.innerText || labelEl.textContent || "").trim();
+      const cleanText = cleanOptionTextForMatch(rawText);
+      const inputEl = node.querySelector("input[type='checkbox'], input[type='radio']") || (node.tagName === "INPUT" ? node : null);
+      return { node, labelEl, rawText, cleanText, inputEl };
+    });
 
-    uniqueNodes.forEach((node) => {
-      const nodeText = node.innerText ? node.innerText.trim().toLowerCase() : "";
-      if (!nodeText) return;
+    targetAnswers.forEach((targetAns) => {
+      if (!targetAns) return;
 
-      const isMatch = targetAnswers.some((ans) => {
-        if (!ans) return false;
-        return nodeText === ans || nodeText.includes(ans) || ans.includes(nodeText);
-      });
+      let bestMatch = null;
+      let highestScore = 0;
 
-      if (isMatch) {
-        const inputEl = node.querySelector("input[type='checkbox'], input[type='radio']") || (node.tagName === "INPUT" ? node : null);
-        if (inputEl) {
-          if (!inputEl.checked) {
-            dispatchFullClickSequence(inputEl);
-            inputEl.checked = true;
-            inputEl.dispatchEvent(new Event("change", { bubbles: true }));
-            inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-          }
+      parsedCandidates.forEach((cand) => {
+        if (!cand.cleanText) return;
+
+        let score = 0;
+        if (cand.cleanText === targetAns) {
+          score = 100;
         } else {
-          dispatchFullClickSequence(node);
+          const normCand = cand.cleanText.replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
+          const normTarget = targetAns.replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
+          if (normCand === normTarget) {
+            score = 95;
+          } else if (normTarget.length >= 5 && normCand.includes(normTarget)) {
+            score = 85;
+          } else if (normCand.length >= 5 && normTarget.includes(normCand)) {
+            score = 80;
+          }
         }
 
-        node.style.outline = "2px solid #10b981";
-        node.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
-        node.style.borderRadius = "6px";
-        node.style.transition = "all 0.2s ease-in-out";
+        if (score > highestScore) {
+          highestScore = score;
+          bestMatch = cand;
+        }
+      });
+
+      if (bestMatch && highestScore >= 80) {
+        console.debug(`NetAcad UI: Auto-selecting option "${bestMatch.rawText}" for target "${targetAns}" (Score: ${highestScore})`);
+
+        if (bestMatch.inputEl) {
+          if (!bestMatch.inputEl.checked) {
+            dispatchFullClickSequence(bestMatch.inputEl);
+            bestMatch.inputEl.checked = true;
+            bestMatch.inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+            bestMatch.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        } else {
+          dispatchFullClickSequence(bestMatch.node);
+        }
+
+        const highlightEl = bestMatch.node;
+        highlightEl.style.outline = "2px solid #10b981";
+        highlightEl.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+        highlightEl.style.borderRadius = "6px";
+        highlightEl.style.transition = "all 0.2s ease-in-out";
+      } else {
+        console.warn(`NetAcad UI: Could not find reliable match for target answer: "${targetAns}"`);
       }
     });
   } catch (err) {
@@ -717,74 +793,77 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
   }
 }
 
-function autoSubmitCurrentQuestion() {
+function findSubmitButtonInRoots() {
   const roots = [document, ...getShadowRoots(document)];
   for (const root of roots) {
-    const buttons = Array.from(root.querySelectorAll("button, input[type='button'], input[type='submit'], .button, mat-button"));
+    const buttons = Array.from(root.querySelectorAll("button, input[type='button'], input[type='submit'], .button, mat-button, [role='button']"));
     const submitBtn = buttons.find((b) => {
-      const txt = (b.innerText || b.value || "").trim().toLowerCase();
-      return (
+      const txt = (b.innerText || b.value || b.getAttribute("aria-label") || b.title || "").trim().toLowerCase();
+      const isSubmitText = (
         txt === "check" ||
         txt === "submit" ||
         txt === "check answer" ||
         txt === "verifikasi" ||
         txt === "kirim" ||
+        txt === "periksa" ||
+        txt === "jawab" ||
+        txt === "submit answer" ||
+        txt.includes("submit") ||
+        txt.includes("check")
+      );
+      const isSubmitClass = (
         b.classList.contains("mcq__submit") ||
         b.classList.contains("js-submit-btn") ||
-        b.classList.contains("component__submit")
+        b.classList.contains("component__submit") ||
+        b.classList.contains("button--primary")
       );
+      return (isSubmitText || isSubmitClass) && !b.disabled;
     });
 
-    if (submitBtn && !submitBtn.disabled) {
-      dispatchFullClickSequence(submitBtn);
-      console.debug("NetAcad AutoAnswer: Clicked per-question Submit button.");
-      return true;
-    }
+    if (submitBtn) return submitBtn;
   }
-  return false;
+  return null;
 }
 
 function autoSubmitQuestion(mcqViewElement) {
-  if (!mcqViewElement) return autoSubmitCurrentQuestion();
   try {
-    const sr = mcqViewElement.shadowRoot;
-    const baseView = sr ? sr.querySelector('base-view[type="component"]') : null;
-    const searchRoots = [
-      sr,
-      baseView && baseView.shadowRoot ? baseView.shadowRoot : null,
-      document,
-    ].filter(Boolean);
-
-    for (const root of searchRoots) {
-      const buttons = Array.from(root.querySelectorAll("button, input[type='button'], input[type='submit'], .button"));
-      const submitBtn = buttons.find((b) => {
-        const txt = (b.innerText || b.value || "").trim().toLowerCase();
-        return (
-          txt === "check" ||
-          txt === "submit" ||
-          txt === "check answer" ||
-          txt === "verifikasi" ||
-          txt === "kirim" ||
-          b.classList.contains("mcq__submit") ||
-          b.classList.contains("js-submit-btn") ||
-          b.classList.contains("component__submit")
-        );
-      });
-
-      if (submitBtn && !submitBtn.disabled) {
-        setTimeout(() => {
-          dispatchFullClickSequence(submitBtn);
-          console.debug("NetAcad AutoAnswer: Auto-submitted question!");
-        }, 300);
-        return true;
+    let submitBtn = null;
+    if (mcqViewElement && mcqViewElement.shadowRoot) {
+      const sr = mcqViewElement.shadowRoot;
+      const baseView = sr.querySelector('base-view[type="component"]');
+      const searchRoots = [sr, baseView && baseView.shadowRoot ? baseView.shadowRoot : null].filter(Boolean);
+      for (const root of searchRoots) {
+        const buttons = Array.from(root.querySelectorAll("button, input[type='button'], input[type='submit'], .button, mat-button"));
+        submitBtn = buttons.find((b) => {
+          const txt = (b.innerText || b.value || b.getAttribute("aria-label") || "").trim().toLowerCase();
+          return (
+            txt === "check" || txt === "submit" || txt === "check answer" || txt === "verifikasi" || txt === "kirim" ||
+            txt.includes("submit") || txt.includes("check") ||
+            b.classList.contains("mcq__submit") || b.classList.contains("js-submit-btn") || b.classList.contains("component__submit")
+          ) && !b.disabled;
+        });
+        if (submitBtn) break;
       }
+    }
+
+    if (!submitBtn) {
+      submitBtn = findSubmitButtonInRoots();
+    }
+
+    if (submitBtn && !submitBtn.disabled) {
+      dispatchFullClickSequence(submitBtn);
+      console.log("NetAcad AutoAnswer: Synchronously submitted question!");
+      return true;
     }
   } catch (err) {
     console.error("NetAcad UI: Auto-submit error:", err);
   }
-  return autoSubmitCurrentQuestion();
+  return false;
 }
 
+function autoSubmitCurrentQuestion() {
+  return autoSubmitQuestion(null);
+}
 
 function detectFinalSubmitPage() {
   const roots = [document, ...getShadowRoots(document)];
@@ -1077,10 +1156,16 @@ async function processSingleQuestion(mcqViewElement, index, apiKey, preFetchedAi
       }
 
       const stored = await chrome.storage.sync.get(["autoSelect", "autoSubmit"]);
-      if (!isMatching && stored.autoSelect !== false) {
+      const isAutoPilot = (typeof isAutonomousRunning !== "undefined" && isAutonomousRunning) ||
+                          (typeof window !== "undefined" && window.isAutonomousRunning) ||
+                          (typeof globalThis !== "undefined" && globalThis.isAutonomousRunning);
+      const shouldAutoSelect = isAutoPilot || stored.autoSelect !== false;
+      const shouldAutoSubmit = isAutoPilot || stored.autoSubmit === true;
+
+      if (!isMatching && shouldAutoSelect) {
         await autoSelectOptionsInDom(mcqViewElement, preFetchedAiAnswer);
       }
-      if (!isMatching && stored.autoSubmit === true) {
+      if (!isMatching && shouldAutoSubmit) {
         autoSubmitQuestion(mcqViewElement);
       }
     }

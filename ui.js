@@ -613,48 +613,24 @@ function autoCompleteVideosOnPage() {
 
 // --- Module Smooth Auto-Scroller Feature across Level-3 Sub-Headings ---
 async function autoScrollModulePage() {
-  console.debug("NetAcad AutoAnswer: Starting module smooth auto-scroll across Level-3 sub-sections...");
+  console.debug("NetAcad AutoAnswer: Starting module smooth auto-scroll...");
 
-  const roots = [document, ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : [])];
+  // 1. One-pass fast video & interactive check button sweep
+  autoCompleteVideosOnPage();
+  autoClickAllCheckButtonsOnPage();
 
-  // 1. Gather all sub-section heading elements on current page
-  let subHeadings = [];
-  roots.forEach((root) => {
-    const els = Array.from(
-      root.querySelectorAll("h1, h2, h3, h4, .component__title, [class*='section-title'], [class*='heading'], [id^='2.']")
-    );
-    subHeadings.push(...els);
-  });
-
-  const uniqueSubHeadings = Array.from(new Set(subHeadings)).filter((el) => el.offsetParent !== null);
-
-  if (uniqueSubHeadings.length > 0) {
-    for (const heading of uniqueSubHeadings) {
-      heading.scrollIntoView({ behavior: "smooth", block: "center" });
-      await new Promise((res) => setTimeout(res, 250));
-
-      autoCompleteVideosOnPage();
-      autoClickAllCheckButtonsOnPage();
-    }
-  }
-
-  // 2. Full page bottom scroll fallback
-  const scrollStep = 400;
+  // 2. Fast fluid scroll to page bottom to hit 100% reading completion trackers
   const maxScroll = Math.max(
     document.body.scrollHeight,
     document.documentElement.scrollHeight,
-    window.innerHeight * 4
+    window.innerHeight * 3
   );
 
-  let currentY = window.scrollY || 0;
-  while (currentY < maxScroll) {
-    currentY += scrollStep;
-    window.scrollTo({ top: currentY, behavior: "smooth" });
-    await new Promise((res) => setTimeout(res, 80));
-  }
+  window.scrollTo({ top: Math.floor(maxScroll / 2), behavior: "smooth" });
+  await new Promise((res) => setTimeout(res, 150));
 
-  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-  await new Promise((res) => setTimeout(res, 300));
+  window.scrollTo({ top: maxScroll, behavior: "smooth" });
+  await new Promise((res) => setTimeout(res, 200));
 }
 
 // --- Parse 3-Level Table of Contents (Level 1 Module -> Level 2 Section -> Level 3 Sub-Topic) ---

@@ -280,6 +280,9 @@ ${m.options.map((o) => `  - ${o.text}`).join("\n")}`;
 // ─────────────────────────────────────────────
 // FUNCTION 2: QUIZ AUTO-PILOT LOOP
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// FUNCTION 2: EFFICIENT QUIZ AUTO-PILOT LOOP
+// ─────────────────────────────────────────────
 async function runAutonomousLoop() {
   if (isAutonomousRunning) {
     if (isAutonomousPaused) resumeAutonomousLoop();
@@ -289,10 +292,10 @@ async function runAutonomousLoop() {
 
   isAutonomousRunning = true;
   isAutonomousPaused = false;
-  console.log("NetAcad AutoAnswer: Starting Quiz Auto-Pilot...");
+  console.log("NetAcad AutoAnswer: Starting Efficient Quiz Auto-Pilot...");
 
   let loopIteration = 0;
-  const maxLoops = 45;
+  const maxLoops = 60;
 
   try {
     while (isAutonomousRunning && loopIteration < maxLoops) {
@@ -304,53 +307,39 @@ async function runAutonomousLoop() {
       const detectFn = resolveFn("detectFinalSubmitPage");
       const confirmFn = resolveFn("confirmAndSubmitFinalAssessment");
 
-      // Check for final submit page
+      // 1. Check for final submit page immediately
       if (detectFn && detectFn()) {
         console.log("NetAcad AutoAnswer: Final submit page detected — confirming & submitting.");
         if (confirmFn) confirmFn();
         break;
       }
 
-      // Answer questions on current view
+      // 2. Answer current question (scrapeData auto-selects and auto-submits synchronously)
       await scrapeData();
-      await waitMs(1800);
+      await waitMs(300);
 
       if (!isAutonomousRunning) break;
 
-      // Submit per-question if available
-      const submitQuestionFn = resolveFn("autoSubmitQuestion");
-      const submitCurrentFn = resolveFn("autoSubmitCurrentQuestion");
-      if (submitQuestionFn) {
-        submitQuestionFn();
-      } else if (submitCurrentFn) {
-        submitCurrentFn();
-      }
-      await waitMs(1000);
-
-      // Check final page again after submit
+      // 3. Re-verify submit page
       if (detectFn && detectFn()) {
         if (confirmFn) confirmFn();
         break;
       }
 
-      await waitMs(200);
-      if (!isAutonomousRunning) break;
-
-      // Advance to next question using Next button (strictly avoiding Q tabs)
+      // 4. Click Next Question Navigation Button immediately
       loopIteration++;
       const nextBtnFn = resolveFn("clickNextQuestionButton") || resolveFn("clickNextQuestionTab");
-
       let moved = nextBtnFn ? nextBtnFn() : false;
 
       if (!moved) {
-        console.debug("NetAcad AutoAnswer: No Next button found — checking for final submission page.");
         if (detectFn && detectFn()) {
           if (confirmFn) confirmFn();
           break;
         }
-        await waitMs(1000);
+        await waitMs(500);
       } else {
-        await waitMs(1400);
+        // Wait for next question view to render in DOM
+        await waitMs(650);
       }
     }
   } finally {
@@ -361,8 +350,7 @@ async function runAutonomousLoop() {
 }
 
 // ─────────────────────────────────────────────
-// FUNCTION 3: COURSE SCROLLER LOOP (SEPARATE)
-// Scrolls pages, fast-forwards videos, navigates 3-level ToC sub-topics
+// FUNCTION 3: EFFICIENT COURSE SCROLLER LOOP
 // ─────────────────────────────────────────────
 async function runCourseScrollerLoop() {
   if (isCourseScrollerRunning) {
@@ -371,58 +359,42 @@ async function runCourseScrollerLoop() {
   }
 
   isCourseScrollerRunning = true;
-  console.log("NetAcad AutoAnswer: Starting Enhanced Course Scroller...");
+  console.log("NetAcad AutoAnswer: Starting Efficient Course Scroller...");
 
-  const maxSubTopics = 200;
+  const maxSubTopics = 250;
   let iterations = 0;
 
   try {
     while (isCourseScrollerRunning && iterations < maxSubTopics) {
       if (!isCourseScrollerRunning) break;
 
-      console.log(`NetAcad AutoAnswer: Course Scroller processing page/section #${iterations + 1}`);
+      console.log(`NetAcad AutoAnswer: Course Scroller processing section #${iterations + 1}`);
 
-      // 1. Fast-forward any video players on current page (especially Video sub-topics)
+      // 1. Cohesive Sweep: Fast-forward videos + click interactive check/flipcard buttons
       const videoFn = resolveFn("autoCompleteVideosOnPage");
-      if (videoFn) {
-        const count = videoFn();
-        if (count > 0) {
-          console.log(`NetAcad AutoAnswer: Fast-forwarded ${count} video player(s) to final second.`);
-          await new Promise((r) => setTimeout(r, 1000));
-        }
-      }
+      if (videoFn) videoFn();
 
-      // 2. Click ALL interactive "Check" / flipcard / self-assessment buttons on current page
       const checkBtnFn = resolveFn("autoClickAllCheckButtonsOnPage");
-      if (checkBtnFn) {
-        const checkCount = checkBtnFn();
-        if (checkCount > 0) {
-          console.log(`NetAcad AutoAnswer: Clicked ${checkCount} interactive "Check" / flipcard button(s).`);
-          await new Promise((r) => setTimeout(r, 800));
-        }
-      }
+      if (checkBtnFn) checkBtnFn();
 
-      // 3. Auto-Solve any "Check Your Understanding" / Quiz sections on current page
+      // 2. Auto-Solve any "Check Your Understanding" / Quiz widgets on page
       const hasQuizFn = resolveFn("detectQuizOrCheckYourUnderstandingOnPage");
       const scrapeFn = resolveFn("scrapeData");
       if (hasQuizFn && hasQuizFn()) {
-        console.log("NetAcad AutoAnswer: Detected 'Check Your Understanding' / Quiz section — auto-solving questions...");
         if (scrapeFn) {
           await scrapeFn();
-          await new Promise((r) => setTimeout(r, 1200));
           const submitQuestionFn = resolveFn("autoSubmitQuestion");
           if (submitQuestionFn) submitQuestionFn();
         }
       }
 
-      // 4. Smooth-scroll full page across all Level-3 sub-sections
+      // 3. One-Pass Fast Page Scroll
       const scrollFn = resolveFn("autoScrollModulePage");
       if (scrollFn) await scrollFn();
 
-      await new Promise((r) => setTimeout(r, 800));
       if (!isCourseScrollerRunning) break;
 
-      // 5. Navigate to the next Level-2 Section / Level-3 sub-topic in the 3-level ToC
+      // 4. Instant ToC Advancement to next incomplete section
       const navFn = resolveFn("navigateToFirstIncompleteLevel3Item");
       const fallbackNavFn = resolveFn("navigateToNextSubModule");
 
@@ -432,11 +404,12 @@ async function runCourseScrollerLoop() {
       }
 
       if (!navigated) {
-        console.log("NetAcad AutoAnswer: Course Scroller — all course modules & sections 100% completed! 🎉");
+        console.log("NetAcad AutoAnswer: Course Scroller — all course topics 100% completed! 🎉");
         break;
       }
 
-      await new Promise((r) => setTimeout(r, 2200));
+      // Wait for next section DOM to render
+      await new Promise((r) => setTimeout(r, 1200));
       iterations++;
     }
   } finally {

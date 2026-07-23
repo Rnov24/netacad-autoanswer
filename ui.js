@@ -864,11 +864,28 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
 
     // Build candidate list with labels and inputs
     const parsedCandidates = uniqueNodes.map((node, index) => {
-      const labelEl = node.querySelector(".mcq__item-label, .mat-radio-label, .mat-checkbox-label, .component__option-label, label, code, span") || node;
-      const rawText = (labelEl.innerText || labelEl.textContent || "").trim();
+      let labelEl = node.querySelector(
+        ".mcq__item-label, .mat-radio-label, .mat-checkbox-label, .component__option-label, label, code, span"
+      );
+      let rawText = labelEl ? (labelEl.innerText || labelEl.textContent || "").trim() : "";
+
+      // If text inside host control is empty, search parent container element
+      if (!rawText) {
+        const container =
+          (typeof node.closest === "function"
+            ? node.closest(".mcq__item, .component__option, .mcq__option, [class*='option'], [class*='item'], li, tr")
+            : null) || node.parentElement || node;
+        rawText = (container.innerText || container.textContent || "").trim();
+        if (!labelEl) labelEl = container;
+      }
+
       const cleanText = cleanOptionTextForMatch(rawText);
       const alphaText = stripNonAlphanumeric(cleanText);
-      const inputEl = node.querySelector("input[type='checkbox'], input[type='radio']") || (node.tagName === "INPUT" ? node : null);
+      const inputEl =
+        node.tagName === "INPUT" || node.tagName.includes("MAT-")
+          ? node
+          : node.querySelector("input[type='checkbox'], input[type='radio']") || node;
+
       return { index, node, labelEl, rawText, cleanText, alphaText, inputEl };
     });
 

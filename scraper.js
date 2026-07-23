@@ -371,57 +371,78 @@ async function runCourseScrollerLoop() {
   }
 
   isCourseScrollerRunning = true;
-  console.log("NetAcad AutoAnswer: Starting Course Scroller...");
+  console.log("NetAcad AutoAnswer: Starting Enhanced Course Scroller...");
 
-  const maxSubTopics = 200; // hard cap
+  const maxSubTopics = 200;
   let iterations = 0;
 
-  while (isCourseScrollerRunning && iterations < maxSubTopics) {
-    if (!isCourseScrollerRunning) break;
+  try {
+    while (isCourseScrollerRunning && iterations < maxSubTopics) {
+      if (!isCourseScrollerRunning) break;
 
-    console.debug(`NetAcad AutoAnswer: Course Scroller step #${iterations + 1}`);
+      console.log(`NetAcad AutoAnswer: Course Scroller processing page/section #${iterations + 1}`);
 
-    // 1. Fast-forward any videos on current page
-    const videoFn = resolveFn("autoCompleteVideosOnPage");
-    if (videoFn) {
-      const count = videoFn();
-      if (count > 0) {
-        console.log(`NetAcad AutoAnswer: Fast-forwarded ${count} video(s).`);
-        // Wait for video "ended" event to register with the LMS
-        await new Promise((r) => setTimeout(r, 1200));
+      // 1. Fast-forward any video players on current page (especially Video sub-topics)
+      const videoFn = resolveFn("autoCompleteVideosOnPage");
+      if (videoFn) {
+        const count = videoFn();
+        if (count > 0) {
+          console.log(`NetAcad AutoAnswer: Fast-forwarded ${count} video player(s) to final second.`);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
+
+      // 2. Click ALL interactive "Check" / flipcard / self-assessment buttons on current page
+      const checkBtnFn = resolveFn("autoClickAllCheckButtonsOnPage");
+      if (checkBtnFn) {
+        const checkCount = checkBtnFn();
+        if (checkCount > 0) {
+          console.log(`NetAcad AutoAnswer: Clicked ${checkCount} interactive "Check" / flipcard button(s).`);
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      }
+
+      // 3. Auto-Solve any "Check Your Understanding" / Quiz sections on current page
+      const hasQuizFn = resolveFn("detectQuizOrCheckYourUnderstandingOnPage");
+      const scrapeFn = resolveFn("scrapeData");
+      if (hasQuizFn && hasQuizFn()) {
+        console.log("NetAcad AutoAnswer: Detected 'Check Your Understanding' / Quiz section — auto-solving questions...");
+        if (scrapeFn) {
+          await scrapeFn();
+          await new Promise((r) => setTimeout(r, 1200));
+          const submitQuestionFn = resolveFn("autoSubmitQuestion");
+          if (submitQuestionFn) submitQuestionFn();
+        }
+      }
+
+      // 4. Smooth-scroll full page across all Level-3 sub-sections
+      const scrollFn = resolveFn("autoScrollModulePage");
+      if (scrollFn) await scrollFn();
+
+      await new Promise((r) => setTimeout(r, 800));
+      if (!isCourseScrollerRunning) break;
+
+      // 5. Navigate to the next Level-2 Section / Level-3 sub-topic in the 3-level ToC
+      const navFn = resolveFn("navigateToFirstIncompleteLevel3Item");
+      const fallbackNavFn = resolveFn("navigateToNextSubModule");
+
+      let navigated = navFn ? navFn() : false;
+      if (!navigated && fallbackNavFn) {
+        navigated = fallbackNavFn();
+      }
+
+      if (!navigated) {
+        console.log("NetAcad AutoAnswer: Course Scroller — all course modules & sections 100% completed! 🎉");
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, 2200));
+      iterations++;
     }
-
-    // 2. Smooth-scroll full page (triggers read-completion trackers)
-    const scrollFn = resolveFn("autoScrollModulePage");
-    if (scrollFn) await scrollFn();
-
-    // Wait for page scroll & LMS tracking to settle
-    await new Promise((r) => setTimeout(r, 600));
-
-    if (!isCourseScrollerRunning) break;
-
-    // 3. Navigate to the next incomplete Level-3 sub-topic from the 3-level ToC
-    const navFn = resolveFn("navigateToFirstIncompleteLevel3Item");
-    const fallbackNavFn = resolveFn("navigateToNextSubModule");
-
-    let navigated = navFn ? navFn() : false;
-    if (!navigated && fallbackNavFn) {
-      navigated = fallbackNavFn();
-    }
-
-    if (!navigated) {
-      console.log("NetAcad AutoAnswer: Course Scroller — all sub-topics completed! 🎉");
-      break;
-    }
-
-    // Wait for next page to load
-    await new Promise((r) => setTimeout(r, 2000));
-    iterations++;
+  } finally {
+    isCourseScrollerRunning = false;
+    console.log("NetAcad AutoAnswer: Course Scroller finished.");
   }
-
-  isCourseScrollerRunning = false;
-  console.log("NetAcad AutoAnswer: Course Scroller finished.");
 }
 
 const scraperExports = {

@@ -517,9 +517,73 @@ async function processMatchingPairsSequentially(sr, pairs) {
   }
 }
 
-// --- Video Auto-Completer Feature ---
+// --- Interactive "Check" / Flipcard Button Clicker Feature ---
+function autoClickAllCheckButtonsOnPage() {
+  const roots = [document, ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : [])];
+  let clickedCount = 0;
+
+  roots.forEach((root) => {
+    const candidateBtns = Array.from(
+      root.querySelectorAll("button, input[type='button'], mat-button, .flip-card, [class*='check'], [class*='flip'], [class*='reveal'], [class*='card']")
+    );
+
+    candidateBtns.forEach((btn) => {
+      try {
+        const text = (btn.innerText || btn.value || btn.getAttribute("aria-label") || btn.title || "").trim().toLowerCase();
+        const isNavBtn = text.includes("next") || text.includes("prev") || text.includes("submit my assessment") || text.includes("lanjut");
+
+        if (isNavBtn || btn.disabled || btn.offsetParent === null) return;
+
+        const isCheckTarget =
+          text === "check" ||
+          text === "check answer" ||
+          text === "check answers" ||
+          text === "show answer" ||
+          text === "flip" ||
+          text === "reveal" ||
+          text === "verify" ||
+          text === "periksa" ||
+          text === "jawab" ||
+          text.includes("check") ||
+          text.includes("flip") ||
+          btn.classList.contains("flip-card") ||
+          btn.classList.contains("check-btn");
+
+        if (isCheckTarget) {
+          dispatchFullClickSequence(btn);
+          clickedCount++;
+          console.debug(`NetAcad AutoAnswer: Clicked interactive check/flipcard button ("${text}")`);
+        }
+      } catch (err) {
+        console.error("NetAcad UI: Error clicking check button:", err);
+      }
+    });
+  });
+
+  return clickedCount;
+}
+
+// --- Quiz / "Check Your Understanding" Section Detector ---
+function detectQuizOrCheckYourUnderstandingOnPage() {
+  const roots = [document, ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : [])];
+
+  for (const root of roots) {
+    const quizViews = root.querySelectorAll("mcq-view, object-matching-view, fill-blank-view, [class*='mcq'], [class*='matching']");
+    if (quizViews.length > 0) return true;
+
+    const headings = Array.from(root.querySelectorAll("h1, h2, h3, h4, .component__title, [class*='title'], [class*='prompt']"));
+    const hasQuizHeading = headings.some((h) => {
+      const txt = (h.innerText || h.textContent || "").toLowerCase();
+      return txt.includes("check your understanding") || txt.includes("section quiz") || txt.includes("module test") || txt.includes("quiz");
+    });
+    if (hasQuizHeading) return true;
+  }
+  return false;
+}
+
+// --- Video Auto-Completer Feature (Fast-forward to last second) ---
 function autoCompleteVideosOnPage() {
-  const roots = [document, ...getShadowRoots(document)];
+  const roots = [document, ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : [])];
   let videosProcessed = 0;
 
   roots.forEach((root) => {
@@ -527,7 +591,7 @@ function autoCompleteVideosOnPage() {
     videos.forEach((video) => {
       try {
         if (video.duration && !isNaN(video.duration) && video.duration > 0) {
-          video.currentTime = Math.max(0, video.duration - 0.5);
+          video.currentTime = Math.max(0, video.duration - 0.2);
           video.play().catch(() => {});
           video.dispatchEvent(new Event("timeupdate", { bubbles: true }));
           video.dispatchEvent(new Event("ended", { bubbles: true }));
@@ -547,10 +611,35 @@ function autoCompleteVideosOnPage() {
   return videosProcessed;
 }
 
-// --- Module Smooth Auto-Scroller Feature ---
+// --- Module Smooth Auto-Scroller Feature across Level-3 Sub-Headings ---
 async function autoScrollModulePage() {
-  console.debug("NetAcad AutoAnswer: Starting module smooth auto-scroll...");
-  const scrollStep = 300;
+  console.debug("NetAcad AutoAnswer: Starting module smooth auto-scroll across Level-3 sub-sections...");
+
+  const roots = [document, ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : [])];
+
+  // 1. Gather all sub-section heading elements on current page
+  let subHeadings = [];
+  roots.forEach((root) => {
+    const els = Array.from(
+      root.querySelectorAll("h1, h2, h3, h4, .component__title, [class*='section-title'], [class*='heading'], [id^='2.']")
+    );
+    subHeadings.push(...els);
+  });
+
+  const uniqueSubHeadings = Array.from(new Set(subHeadings)).filter((el) => el.offsetParent !== null);
+
+  if (uniqueSubHeadings.length > 0) {
+    for (const heading of uniqueSubHeadings) {
+      heading.scrollIntoView({ behavior: "smooth", block: "center" });
+      await new Promise((res) => setTimeout(res, 250));
+
+      autoCompleteVideosOnPage();
+      autoClickAllCheckButtonsOnPage();
+    }
+  }
+
+  // 2. Full page bottom scroll fallback
+  const scrollStep = 400;
   const maxScroll = Math.max(
     document.body.scrollHeight,
     document.documentElement.scrollHeight,
@@ -1288,6 +1377,8 @@ const exportsList = {
   dispatchFullClickSequence,
   findExactMatchingElements,
   processMatchingPairsSequentially,
+  autoClickAllCheckButtonsOnPage,
+  detectQuizOrCheckYourUnderstandingOnPage,
   autoCompleteVideosOnPage,
   autoScrollModulePage,
   parseThreeLevelCourseToC,

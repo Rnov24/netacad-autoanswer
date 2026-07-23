@@ -837,16 +837,28 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
       }
     }
 
-    // Tier 2: Gather Option Choice Nodes
+    // Tier 2: Gather Option Choice Nodes (prioritize interactive controls first)
     let optionNodes = [];
     searchRoots.forEach((root) => {
-      const nodes = Array.from(
-        root.querySelectorAll(
-          "mat-radio-button, mat-checkbox, .component__option, .mcq__item, .mcq__option, label[for], .mcq__item-label, label, [class*='option'], [class*='choice'], [class*='item']"
-        )
+      const interactiveInputs = Array.from(
+        root.querySelectorAll("mat-radio-button, mat-checkbox, input[type='radio'], input[type='checkbox']")
       );
-      optionNodes.push(...nodes);
+      if (interactiveInputs.length > 0) {
+        optionNodes.push(...interactiveInputs);
+      }
     });
+
+    // Fallback to generic option containers ONLY if no mat-radio-button / mat-checkbox elements were found
+    if (optionNodes.length === 0) {
+      searchRoots.forEach((root) => {
+        const nodes = Array.from(
+          root.querySelectorAll(
+            ".component__option, .mcq__item, .mcq__option, label[for], .component__option-label"
+          )
+        );
+        optionNodes.push(...nodes);
+      });
+    }
 
     const uniqueNodes = Array.from(new Set(optionNodes));
 
@@ -891,16 +903,17 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         }
       });
 
-      // Tier 3: Positional Number & Letter Fallback
+      // Tier 3: Positional Number & Letter Fallback (ONLY if option controls have no text or no text match was found)
+      const hasAnyOptionText = parsedCandidates.some((c) => c.alphaText.length > 0);
       if (!bestMatch || highestScore < 70) {
-        if (/^[1-9]\d*$/.test(targetAns)) {
+        if (/^[1-9]\d*$/.test(targetAns) && !hasAnyOptionText) {
           const numIdx = parseInt(targetAns, 10) - 1;
           if (numIdx >= 0 && numIdx < parsedCandidates.length) {
             bestMatch = parsedCandidates[numIdx];
             highestScore = 75;
             console.log(`NetAcad UI: Positional number fallback matched target "${targetAns}" to option #${numIdx + 1} ("${bestMatch.rawText}")`);
           }
-        } else if (/^[a-z]$/i.test(targetAns)) {
+        } else if (/^[a-z]$/i.test(targetAns) && !hasAnyOptionText) {
           const letterIdx = targetAns.toLowerCase().charCodeAt(0) - 97;
           if (letterIdx >= 0 && letterIdx < parsedCandidates.length) {
             bestMatch = parsedCandidates[letterIdx];

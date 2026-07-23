@@ -97,7 +97,8 @@ CRITICAL INSTRUCTIONS:
     }
   ]
 }
-- For normal MCQ: return exact option text. If multiple apply, separate with ' /// '.
+- For normal MCQ: return exact option text as rendered in the options list (or the exact letter "A", "B", "C", "D" if options are single letters). Do NOT add artificial prefix numbers (like "4. "). If multiple apply, separate with ' /// '.
+- For code snippet / math questions: carefully check return types (list vs tuple) and operators (e.g. x**x exponentiation vs x*x multiplication).
 - For OBJECT_MATCHING: output ALL pairs on one line: 'A: <exact option text> /// B: <exact option text>'. Use exact text from items list.
 - Return ONLY valid JSON object with no extra text outside JSON.`;
 }

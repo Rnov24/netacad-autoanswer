@@ -923,14 +923,9 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         }
       }
 
-      // Tier 4: Direct Index Fallback
-      if (!bestMatch && parsedCandidates.length > tIdx) {
-        bestMatch = parsedCandidates[tIdx];
-        highestScore = 50;
-        console.log(`NetAcad UI: Direct index fallback matched target "${targetAns}" to option #${tIdx + 1}`);
-      }
+      // No Tier 4 Direct Index Fallback — if confidence score is low (<70), do NOT click a random option!
 
-      if (bestMatch) {
+      if (bestMatch && highestScore >= 70) {
         console.debug(`NetAcad UI: Auto-selecting option "${bestMatch.rawText}" for target "${targetAns}" (Score: ${highestScore})`);
 
         if (bestMatch.inputEl) {

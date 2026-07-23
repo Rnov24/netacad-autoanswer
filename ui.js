@@ -709,7 +709,18 @@ function parseThreeLevelCourseToC() {
       if (!text) return;
 
       const firstLine = text.split("\n")[0].trim();
-      // Match Level 3 (e.g. 2.2.1, 4.1.2) OR Level 2 (e.g. 2.4, 3.1, 4.1)
+      const lowerFirst = firstLine.toLowerCase();
+
+      // Exclude Final Exam, PCAP, and End of Course Survey items
+      if (
+        lowerFirst.includes("pcap") ||
+        lowerFirst.includes("final exam") ||
+        lowerFirst.includes("survey") ||
+        lowerFirst.includes("certification")
+      ) {
+        return;
+      }
+
       const isLevel3Pattern = /^\d+\.\d+\.\d+/i.test(firstLine);
       const isLevel2Pattern = /^\d+\.\d+/i.test(firstLine);
 
@@ -759,94 +770,10 @@ function navigateToFirstIncompleteLevel3Item() {
   return false;
 }
 
-// --- Check Entire Course Outline Completion Status ---
-function checkModuleCompletionStatus() {
-  const roots = [document, ...getShadowRoots(document)];
-  const modulesList = [];
-
-  roots.forEach((root) => {
-    const items = Array.from(
-      root.querySelectorAll(
-        ".course-outline-item, .tree-item, .module-item, .topic-item, [class*='outline-item'], [class*='topic'], [class*='submodule']"
-      )
-    );
-
-    items.forEach((item, index) => {
-      const text = (item.innerText || "").trim();
-      if (!text || text.length < 3) return;
-
-      const hasCheckmark =
-        item.querySelector(".icon-check, .completed, [class*='check'], [class*='complete'], svg[class*='check']") !== null ||
-        item.classList.contains("completed") ||
-        item.classList.contains("is-complete") ||
-        item.getAttribute("data-completed") === "true";
-
-      const fractionMatch = text.match(/(\d+)\s*\/\s*(\d+)/);
-      let isCompleted = hasCheckmark;
-      if (fractionMatch) {
-        const current = parseInt(fractionMatch[1], 10);
-        const total = parseInt(fractionMatch[2], 10);
-        isCompleted = current >= total;
-      }
-
-      if (!modulesList.some((m) => m.title === text.split("\n")[0].trim())) {
-        modulesList.push({
-          index,
-          title: text.split("\n")[0].trim(),
-          isCompleted,
-          element: item,
-        });
-      }
-    });
-  });
-
-  const completedCount = modulesList.filter((m) => m.isCompleted).length;
-  const incompleteModules = modulesList.filter((m) => !m.isCompleted);
-
-  console.log(`NetAcad Course Status: ${completedCount}/${modulesList.length} sub-modules completed.`);
-  return { modulesList, completedCount, incompleteModules };
-}
-
-function navigateToFirstIncompleteModule() {
-  const navigatedL3 = navigateToFirstIncompleteLevel3Item();
-  if (navigatedL3) return true;
-
-  const { incompleteModules } = checkModuleCompletionStatus();
-  if (incompleteModules.length > 0) {
-    const firstIncomplete = incompleteModules[0];
-    console.log(`NetAcad Course Auto-Pilot: Navigating to first incomplete sub-module: "${firstIncomplete.title}"`);
-    dispatchFullClickSequence(firstIncomplete.element);
-    return true;
-  }
-  console.log("NetAcad Course Auto-Pilot: All modules in course are 100% completed! 🎉");
-  return false;
-}
-
-// --- Navigate to Next Sub-Module ---
+// --- Strictly ToC-Based Module Navigation ---
 function navigateToNextSubModule() {
-  const roots = [document, ...getShadowRoots(document)];
-  for (const root of roots) {
-    const buttons = Array.from(root.querySelectorAll("button, a, input[type='button'], .nav-btn"));
-    const nextSubModuleBtn = buttons.find((b) => {
-      const txt = (b.innerText || b.value || b.getAttribute("aria-label") || b.getAttribute("title") || "").trim().toLowerCase();
-      return (
-        txt.includes("next module") ||
-        txt.includes("next topic") ||
-        txt.includes("next sub-module") ||
-        txt.includes("next page") ||
-        b.classList.contains("nav-next-submodule") ||
-        b.classList.contains("next-topic")
-      );
-    });
-
-    if (nextSubModuleBtn && !nextSubModuleBtn.disabled) {
-      dispatchFullClickSequence(nextSubModuleBtn);
-      console.debug("NetAcad AutoAnswer: Clicked next sub-module button!");
-      return true;
-    }
-  }
-
-  return navigateToFirstIncompleteModule();
+  // Rely strictly on Table of Contents (ToC) to prevent footer link jumping to Final Exam / PCAP
+  return navigateToFirstIncompleteLevel3Item();
 }
 
 function cleanOptionTextForMatch(text) {

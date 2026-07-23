@@ -635,39 +635,42 @@ async function autoScrollModulePage() {
 function isTocItemCompleted(item) {
   if (!item) return false;
 
-  // 1. Explicit completion classes on element
-  const classListStr = (item.className || "").toString().toLowerCase();
-  if (classListStr.includes("completed") || classListStr.includes("is-completed") || classListStr.includes("status-done")) {
-    return true;
-  }
-
-  // 2. Check for explicit green checkmark icons (excluding generic checkbox containers)
-  const greenCheckIcon = item.querySelector(
-    "svg.green, .green-check, .icon-check, .completed-icon, .fa-check, .fa-check-circle, [data-icon='check'], [data-icon='check-circle'], mat-icon[fonticon='check'], i.icon-check"
-  );
-  if (greenCheckIcon) return true;
-
-  // 3. Check for fraction indicators e.g. "10/10" vs "3/10"
   const itemText = (item.innerText || item.textContent || "").trim();
+
+  // 1. ABSOLUTE TRUTH: Fraction Ratio (e.g. "0/5", "3/10", "10/10", "11/11")
   const fractionMatch = itemText.match(/(\d+)\s*\/\s*(\d+)/);
   if (fractionMatch) {
     const current = parseInt(fractionMatch[1], 10);
     const total = parseInt(fractionMatch[2], 10);
-    if (total > 0 && current >= total) return true;
-    if (total > 0 && current < total) return false;
+    if (total > 0) {
+      // If current count is less than total, it is UNDONE (incomplete)
+      if (current < total) return false;
+      // If current count equals or exceeds total, it is DONE (completed)
+      if (current >= total) return true;
+    }
   }
 
-  // 4. SVG fill color check (green fill #10b981, #059669, #22c55e)
+  // 2. SECONDARY TRUTH: Explicit Completion Classes on element
+  const classListStr = (item.className || "").toString().toLowerCase();
+  if (classListStr.includes("is-completed") || classListStr.includes("status-done")) {
+    return true;
+  }
+
+  // 3. TERTIARY TRUTH: Explicit Green Checkmark Icons (only if no 0/X fraction was present)
+  const greenCheckIcon = item.querySelector(
+    "svg.green, .green-check, .icon-check, .completed-icon, .fa-check-circle, [data-icon='check-circle'], mat-icon[fonticon='check']"
+  );
+  if (greenCheckIcon && !itemText.includes("0/")) return true;
+
+  // 4. SVG fill color check (#10b981, #059669, #22c55e)
   const svgs = item.querySelectorAll("svg");
   for (const svg of svgs) {
     const fill = (svg.getAttribute("fill") || "").toLowerCase();
     const style = (svg.getAttribute("style") || "").toLowerCase();
-    const color = (svg.getAttribute("color") || "").toLowerCase();
     if (
-      fill.includes("#10b981") || fill.includes("#059669") || fill.includes("#22c55e") || fill.includes("green") ||
-      color.includes("green") || style.includes("green") || style.includes("#10b981")
+      fill.includes("#10b981") || fill.includes("#059669") || fill.includes("#22c55e") || style.includes("#10b981")
     ) {
-      return true;
+      if (!itemText.includes("0/")) return true;
     }
   }
 
@@ -680,9 +683,11 @@ function parseThreeLevelCourseToC() {
   const allSubTopics = [];
 
   roots.forEach((root) => {
-    // 1. Automatically expand any collapsed accordions in ToC sidebar
+    // 1. Expand all collapsed accordions in ToC sidebar
     const expandButtons = Array.from(
-      root.querySelectorAll(".accordion-toggle, .expand-btn, [class*='expand'], [aria-expanded='false']")
+      root.querySelectorAll(
+        ".accordion-toggle, .expand-btn, [class*='expand'], [class*='accordion'], [aria-expanded='false']"
+      )
     );
     expandButtons.forEach((btn) => {
       try {
@@ -692,10 +697,10 @@ function parseThreeLevelCourseToC() {
       } catch (_) {}
     });
 
-    // 2. Query all ToC items in strict DOM document order
+    // 2. Query all candidate ToC items in strict DOM document order
     const items = Array.from(
       root.querySelectorAll(
-        "li, .tree-node, .subtopic-item, .topic-item, .section-item, [class*='subtopic'], [class*='tree-item'], [class*='leaf']"
+        "app-course-outline-item, li, .tree-node, .subtopic-item, .topic-item, .section-item, [class*='outline-item'], [class*='subtopic'], [class*='tree-item'], [class*='leaf'], [class*='topic']"
       )
     );
 
@@ -704,6 +709,7 @@ function parseThreeLevelCourseToC() {
       if (!text) return;
 
       const firstLine = text.split("\n")[0].trim();
+      // Match Level 3 (e.g. 2.2.1, 4.1.2) OR Level 2 (e.g. 2.4, 3.1, 4.1)
       const isLevel3Pattern = /^\d+\.\d+\.\d+/i.test(firstLine);
       const isLevel2Pattern = /^\d+\.\d+/i.test(firstLine);
 
@@ -726,19 +732,29 @@ function parseThreeLevelCourseToC() {
   const completedCount = allSubTopics.filter((t) => t.isCompleted).length;
   const incompleteSubTopics = allSubTopics.filter((t) => !t.isCompleted);
 
-  console.log(`NetAcad ToC Sequential Status: ${completedCount}/${allSubTopics.length} topics completed.`);
+  console.log(`NetAcad ToC Sequential Progress: ${completedCount}/${allSubTopics.length} topics completed.`);
   return { allSubTopics, completedCount, incompleteSubTopics };
 }
 
 // --- Navigate to First Incomplete Section in Strict Top-to-Bottom Order ---
 function navigateToFirstIncompleteLevel3Item() {
-  const { incompleteSubTopics } = parseThreeLevelCourseToC();
+  const { allSubTopics, incompleteSubTopics } = parseThreeLevelCourseToC();
+
+  if (allSubTopics.length > 0) {
+    console.group("NetAcad ToC Audit Trace");
+    allSubTopics.forEach((topic, i) => {
+      console.log(`[ToC #${i + 1}] "${topic.title}" -> ${topic.isCompleted ? "DONE ✔" : "UNDONE ⏳"}`);
+    });
+    console.groupEnd();
+  }
+
   if (incompleteSubTopics.length > 0) {
     const firstIncomplete = incompleteSubTopics[0];
-    console.log(`NetAcad ToC Navigation: Advancing to next incomplete section in order: "${firstIncomplete.title}"`);
+    console.log(`NetAcad ToC Navigation: Advancing to FIRST UNDONE topic in order: "${firstIncomplete.title}"`);
     dispatchFullClickSequence(firstIncomplete.element);
     return true;
   }
+
   console.log("NetAcad ToC Navigation: All course sections & topics are 100% completed! 🎉");
   return false;
 }

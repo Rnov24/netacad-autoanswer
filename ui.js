@@ -152,6 +152,63 @@ function createAiAssistantUI(uiContainerId, index) {
   return { uiContainer, aiAnswerDisplay, refreshButton, autoSelectButton, copyButton, badge };
 }
 
+function zoomOutExtractContext(element, promptText) {
+  const codeSnippets = [];
+
+  const allRoots = [
+    element ? element.shadowRoot : null,
+    element && element.getRootNode ? element.getRootNode() : null,
+    ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : []),
+    document,
+  ].filter((r) => r && r instanceof Node);
+
+  allRoots.forEach((root) => {
+    const codeSelectors = [
+      "pre",
+      "code",
+      "[class*='code']",
+      "[class*='snippet']",
+      "[class*='terminal']",
+      "[class*='editor']",
+      "[class*='syntax']",
+      ".code-block",
+      ".syntax-highlighter",
+      ".formatted-code",
+      "table",
+      "textarea",
+      "figure",
+    ].join(", ");
+
+    const elements = Array.from(root.querySelectorAll(codeSelectors));
+    elements.forEach((el) => {
+      // Ignore AI Assistant panel and MCQ choice options
+      if (el.closest && (el.closest(".ai-assistant-panel") || el.closest(".mcq__item") || el.closest("mat-radio-button") || el.closest("mat-checkbox"))) {
+        return;
+      }
+
+      const text = (el.innerText || el.textContent || "").trim();
+      const isCodeLike =
+        text.includes("\n") ||
+        /\b(class|def|return|print|import|from|if|else|elif|for|while|try|except|pass|var|let|const|function|issubclass)\b/.test(text) ||
+        /[\{\}\(\)\[\];\=]/.test(text);
+
+      if (text.length > 5 && isCodeLike && !promptText.includes(text) && !codeSnippets.some((s) => s.includes(text) || text.includes(s))) {
+        codeSnippets.push(text);
+      }
+    });
+
+    const imgEls = Array.from(root.querySelectorAll("img[alt]"));
+    imgEls.forEach((img) => {
+      const alt = (img.getAttribute("alt") || "").trim();
+      if (alt && alt.length > 3 && !promptText.includes(alt) && !codeSnippets.includes(`[Image Description: ${alt}]`)) {
+        codeSnippets.push(`[Image Description: ${alt}]`);
+      }
+    });
+  });
+
+  return codeSnippets;
+}
+
 function extractQuestionAndAnswers(mcqViewElement, index) {
   let questionText = "Question text not found";
   let answerElements = [];
@@ -183,34 +240,11 @@ function extractQuestionAndAnswers(mcqViewElement, index) {
         }
       }
 
-      // Check for code blocks, pre/code tags, syntax highlighters inside root or parent block-view/article-view
-      let searchScopes = [root, mcqViewElement.shadowRoot];
-      if (mcqViewElement.getRootNode && mcqViewElement.getRootNode() instanceof ShadowRoot) {
-        searchScopes.push(mcqViewElement.getRootNode());
-      }
-
-      const codeSnippets = [];
-      searchScopes.forEach((scope) => {
-        if (!scope) return;
-        const codeEls = Array.from(scope.querySelectorAll("pre, code, [class*='code'], [class*='snippet'], textarea, table, .syntax-highlighter, figure"));
-        codeEls.forEach((c) => {
-          const cText = (c.innerText || c.textContent || "").trim();
-          if (cText.length > 5 && !promptText.includes(cText) && !codeSnippets.includes(cText)) {
-            codeSnippets.push(cText);
-          }
-        });
-
-        const imgEls = Array.from(scope.querySelectorAll("img[alt]"));
-        imgEls.forEach((img) => {
-          const alt = (img.getAttribute("alt") || "").trim();
-          if (alt && alt.length > 3 && !promptText.includes(alt) && !codeSnippets.includes(`[Image Description: ${alt}]`)) {
-            codeSnippets.push(`[Image Description: ${alt}]`);
-          }
-        });
-      });
+      // Zoom out search scope to extract all code blocks, syntax highlighters & context across document & shadow DOMs
+      const codeSnippets = zoomOutExtractContext(mcqViewElement, promptText);
 
       if (codeSnippets.length > 0) {
-        questionText = `${promptText}\n\nCode / Reference:\n${codeSnippets.join("\n\n")}`;
+        questionText = `${promptText}\n\nCode / Context:\n${codeSnippets.join("\n\n")}`;
       } else {
         questionText = promptText || "Question text not found";
       }

@@ -432,32 +432,82 @@ async function recordPageData() {
     let headingTexts = [];
     let paragraphTexts = [];
     let codeBlocks = [];
+    let questionsData = [];
+
+    // Helper: filter out navigation / sidebar elements
+    function isSidebarOrNav(el) {
+      if (!el) return false;
+      let curr = el;
+      while (curr && curr !== document && curr !== window) {
+        const cls = (curr.className || "").toString().toLowerCase();
+        const id = (curr.id || "").toString().toLowerCase();
+        const tag = (curr.tagName || "").toLowerCase();
+        if (
+          cls.includes("outline") || cls.includes("sidebar") || cls.includes("toc") ||
+          cls.includes("menu") || cls.includes("nav") || tag === "nav" || tag === "header" || tag === "aside" ||
+          id.includes("sidebar") || id.includes("outline") || id.includes("nav")
+        ) {
+          return true;
+        }
+        curr = curr.parentElement || (curr.getRootNode ? curr.getRootNode().host : null);
+      }
+      return false;
+    }
 
     roots.forEach((root) => {
-      const hEls = Array.from(root.querySelectorAll("h1, h2, h3, h4, .component__title, [class*='title']"));
+      // 1. Headings in main content
+      const hEls = Array.from(root.querySelectorAll("h1, h2, h3, h4, .component__title, [class*='section-title']"));
       hEls.forEach((h) => {
+        if (isSidebarOrNav(h)) return;
         const txt = (h.innerText || h.textContent || "").trim();
-        if (txt && txt.length > 2) headingTexts.push(txt);
+        if (txt && txt.length > 2 && !txt.toLowerCase().includes("course outline")) headingTexts.push(txt);
       });
 
-      const pEls = Array.from(root.querySelectorAll("p, article, .component__content, [class*='content'], [class*='text']"));
+      // 2. Paragraphs / Article text
+      const pEls = Array.from(root.querySelectorAll("p, article, .component__content, [class*='article'], [class*='content']"));
       pEls.forEach((p) => {
+        if (isSidebarOrNav(p)) return;
         const txt = (p.innerText || p.textContent || "").trim();
-        if (txt && txt.length > 15 && !txt.startsWith("<")) paragraphTexts.push(txt);
+        if (txt && txt.length > 15 && !txt.startsWith("<") && !txt.includes("Course Outline")) {
+          paragraphTexts.push(txt);
+        }
       });
 
-      const cEls = Array.from(root.querySelectorAll("pre, code, [class*='code'], [class*='terminal'], [class*='snippet'], table"));
+      // 3. Code Blocks & Terminal Snippets
+      const cEls = Array.from(root.querySelectorAll("pre, code, [class*='code'], [class*='terminal'], [class*='snippet'], [class*='editor']"));
       cEls.forEach((c) => {
+        if (isSidebarOrNav(c)) return;
         const txt = (c.innerText || c.textContent || "").trim();
         if (txt && txt.length > 5) codeBlocks.push(txt);
+      });
+
+      // 4. Questions & Answers on page
+      const mcqElements = Array.from(root.querySelectorAll("mcq-view, object-matching-view, fill-blank-view"));
+      mcqElements.forEach((mcqEl) => {
+        const qFn = resolveFn("extractQuestionAndAnswers");
+        if (qFn) {
+          const parsed = qFn(mcqEl);
+          if (parsed && parsed.questionText) {
+            questionsData.push({
+              question: parsed.questionText,
+              options: parsed.answerTexts || [],
+            });
+          }
+        }
       });
     });
 
     const uniqueHeadings = [...new Set(headingTexts)].slice(0, 5);
-    const uniqueParagraphs = [...new Set(paragraphTexts)].slice(0, 30);
-    const uniqueCodeBlocks = [...new Set(codeBlocks)].slice(0, 10);
+    const uniqueParagraphs = [...new Set(paragraphTexts)].slice(0, 40);
+    const uniqueCodeBlocks = [...new Set(codeBlocks)].slice(0, 15);
 
     const sectionTitle = uniqueHeadings.length > 0 ? uniqueHeadings.join(" | ") : pageTitle;
+
+    // Avoid recording empty / sidebar-only pages
+    if (uniqueParagraphs.length === 0 && uniqueCodeBlocks.length === 0 && questionsData.length === 0) {
+      console.debug("NetAcad Data Exporter: Skipping page with no main article content yet.");
+      return;
+    }
 
     const entry = {
       url: window.location.href,
@@ -466,6 +516,7 @@ async function recordPageData() {
       timestamp: new Date().toISOString(),
       paragraphs: uniqueParagraphs,
       codeBlocks: uniqueCodeBlocks,
+      questions: questionsData,
     };
 
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {

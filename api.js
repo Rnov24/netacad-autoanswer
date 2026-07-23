@@ -298,7 +298,19 @@ async function callOpenRouterApi(prompt, apiKey, modelName, useJsonMode = false)
   return text.trim();
 }
 
-async function queryAiProvider(prompt, overrideApiKey = null, useJsonMode = false) {
+function parseRateLimitDelayMs(errorMsg) {
+  if (!errorMsg || typeof errorMsg !== "string") return 6000;
+  const matchSec = errorMsg.match(/try again in\s+([0-9\.]+)\s*s/i) || errorMsg.match(/in\s+([0-9\.]+)\s*s/i);
+  if (matchSec && matchSec[1]) {
+    const seconds = parseFloat(matchSec[1]);
+    if (!isNaN(seconds) && seconds > 0) {
+      return Math.ceil(seconds * 1000) + 1000;
+    }
+  }
+  return 6000;
+}
+
+async function queryAiProvider(prompt, overrideApiKey = null, useJsonMode = false, retries = 2) {
   const cfg = await getProviderConfig();
   const apiKey = overrideApiKey || cfg.apiKey;
   const provider = cfg.provider;
@@ -308,18 +320,39 @@ async function queryAiProvider(prompt, overrideApiKey = null, useJsonMode = fals
     throw new Error(`API Key for ${provider} is missing. Please set it in extension popup.`);
   }
 
-  switch (provider) {
-    case "groq":
-      return await callGroqApi(prompt, apiKey, model, useJsonMode);
-    case "openai":
-      return await callOpenAiApi(prompt, apiKey, model, useJsonMode);
-    case "anthropic":
-      return await callAnthropicApi(prompt, apiKey, model, useJsonMode);
-    case "openrouter":
-      return await callOpenRouterApi(prompt, apiKey, model, useJsonMode);
-    case "gemini":
-    default:
-      return await callGeminiApi(prompt, apiKey, model, useJsonMode);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      switch (provider) {
+        case "groq":
+          return await callGroqApi(prompt, apiKey, model, useJsonMode);
+        case "openai":
+          return await callOpenAiApi(prompt, apiKey, model, useJsonMode);
+        case "anthropic":
+          return await callAnthropicApi(prompt, apiKey, model, useJsonMode);
+        case "openrouter":
+          return await callOpenRouterApi(prompt, apiKey, model, useJsonMode);
+        case "gemini":
+        default:
+          return await callGeminiApi(prompt, apiKey, model, useJsonMode);
+      }
+    } catch (err) {
+      const errMsg = err ? err.message || "" : "";
+      const isRateLimit = errMsg.includes("429") || errMsg.toLowerCase().includes("rate_limit") || errMsg.toLowerCase().includes("rate limit");
+
+      if (isRateLimit && attempt < retries) {
+        const waitMs = parseRateLimitDelayMs(errMsg);
+        const waitSec = Math.round(waitMs / 1000);
+        console.warn(`NetAcad AI Engine: Rate limit hit for ${provider} (${model}). Retrying attempt ${attempt + 1}/${retries} in ${waitSec}s...`);
+        await new Promise((r) => setTimeout(r, waitMs));
+      } else {
+        if (isRateLimit) {
+          const waitMs = parseRateLimitDelayMs(errMsg);
+          const waitSec = Math.round(waitMs / 1000);
+          throw new Error(`Rate limit exceeded for ${provider} (${model}). Please wait ~${waitSec}s or switch to Gemini 3.6 Flash in extension popup.`);
+        }
+        throw err;
+      }
+    }
   }
 }
 

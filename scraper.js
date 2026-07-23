@@ -313,7 +313,7 @@ async function runAutonomousLoop() {
 
       // Answer questions on current view
       await scrapeData();
-      await waitMs(1200);
+      await waitMs(1800);
 
       if (!isAutonomousRunning) break;
 
@@ -325,7 +325,7 @@ async function runAutonomousLoop() {
       } else if (submitCurrentFn) {
         submitCurrentFn();
       }
-      await waitMs(800);
+      await waitMs(1000);
 
       // Check final page again after submit
       if (detectFn && detectFn()) {

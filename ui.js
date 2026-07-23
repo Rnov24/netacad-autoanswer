@@ -783,6 +783,8 @@ function navigateToNextSubModule() {
 function cleanOptionTextForMatch(text) {
   if (!text || typeof text !== "string") return "";
   let clean = text.trim();
+  // Strip AI prefixes like "AI Suggestion:", "AI Suggestions:", "Answer:"
+  clean = clean.replace(/^(?:ai\s*suggestions?:?|suggested\s*answers?:?|answers?:?)\s*/i, "").trim();
   const stripped = clean.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
   const result = (stripped.length > 0 ? stripped : clean).toLowerCase();
   return result;

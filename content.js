@@ -254,9 +254,16 @@ function updateFloatingButtonState() {
   banners.forEach((banner) => {
     if (isAutoRunning || isScrollRunning) {
       banner.style.display = "flex";
-      banner.innerHTML = `<span class="netacad-running-dot"></span> ${
-        isAutoRunning ? "⚡ Quiz Auto-Pilot is Running... Please do not switch or close this tab!" : "📜 Course Scroller is Running... Please do not switch or close this tab!"
-      }`;
+      let bannerText;
+      if (isAutoRunning) {
+        bannerText = "⚡ Quiz Auto-Pilot is Running... Please do not switch or close this tab!";
+      } else {
+        const cur = window.scrollerCurrentSection || globalThis.scrollerCurrentSection || 0;
+        const tot = window.scrollerTotalSections  || globalThis.scrollerTotalSections  || 0;
+        const progressStr = (cur > 0 && tot > 0) ? ` (${cur}/${tot})` : "";
+        bannerText = `📜 Course Scroller is Running${progressStr}... Please do not switch or close this tab!`;
+      }
+      banner.innerHTML = `<span class="netacad-running-dot"></span> ${bannerText}`;
     } else {
       banner.style.display = "none";
     }
@@ -343,7 +350,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const isAutoRunning = !!(window.isAutonomousRunning || globalThis.isAutonomousRunning);
     const isScrollRunning = !!(window.isCourseScrollerRunning || globalThis.isCourseScrollerRunning);
     const isPaused = !!(window.isAutonomousPaused || globalThis.isAutonomousPaused);
-    sendResponse({ isAutoRunning, isScrollRunning, isPaused });
+    const scrollCurrent = (window.scrollerCurrentSection || globalThis.scrollerCurrentSection) || 0;
+    const scrollTotal   = (window.scrollerTotalSections  || globalThis.scrollerTotalSections)  || 0;
+    sendResponse({ isAutoRunning, isScrollRunning, isPaused, scrollCurrent, scrollTotal });
     return true;
   }
 

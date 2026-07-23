@@ -613,23 +613,24 @@ function autoCompleteVideosOnPage() {
 
 // --- Module Smooth Auto-Scroller Feature across Level-3 Sub-Headings ---
 async function autoScrollModulePage() {
-  console.debug("NetAcad AutoAnswer: Starting module smooth auto-scroll...");
+  console.debug("NetAcad AutoAnswer: Starting module auto-scroll...");
 
-  // 1. One-pass fast video & interactive check button sweep
-  autoCompleteVideosOnPage();
-  autoClickAllCheckButtonsOnPage();
-
-  // 2. Fast fluid scroll to page bottom to hit 100% reading completion trackers
+  // Scroll to page bottom instantly so IntersectionObservers and progress trackers fire reliably
   const maxScroll = Math.max(
     document.body.scrollHeight,
     document.documentElement.scrollHeight,
     window.innerHeight * 3
   );
-  window.scrollTo({ top: Math.floor(maxScroll / 2), behavior: "smooth" });
-  await new Promise((res) => setTimeout(res, 150));
 
-  window.scrollTo({ top: maxScroll, behavior: "smooth" });
-  await new Promise((res) => setTimeout(res, 200));
+  // First pass: scroll to midpoint (smooth — visual feedback)
+  window.scrollTo({ top: Math.floor(maxScroll / 2), behavior: "smooth" });
+  await new Promise((res) => setTimeout(res, 300));
+
+  // Second pass: instant scroll to bottom so completion trackers register
+  window.scrollTo({ top: maxScroll, behavior: "auto" });
+  // Dispatch a synthetic scroll event to ensure IntersectionObserver callbacks fire
+  window.dispatchEvent(new Event("scroll"));
+  await new Promise((res) => setTimeout(res, 800));
 }
 
 function isTocItemCompleted(item) {
@@ -683,17 +684,23 @@ function parseThreeLevelCourseToC() {
   const allSubTopics = [];
 
   roots.forEach((root) => {
-    // 1. Expand all collapsed accordions in ToC sidebar
+    // 1. Expand all collapsed accordions in the ToC sidebar only
+    const tocContainer =
+      root.querySelector("app-course-outline") ||
+      root.querySelector("[class*='course-outline']") ||
+      root.querySelector("[class*='sidebar']") ||
+      root.querySelector("nav");
+
+    const expandScope = tocContainer || root;
     const expandButtons = Array.from(
-      root.querySelectorAll(
-        ".accordion-toggle, .expand-btn, [class*='expand'], [class*='accordion'], [aria-expanded='false']"
+      expandScope.querySelectorAll(
+        ".accordion-toggle, .expand-btn, [class*='expand'], [class*='accordion']"
       )
-    );
+    ).filter((btn) => btn.getAttribute("aria-expanded") === "false" || btn.classList.contains("collapsed"));
+
     expandButtons.forEach((btn) => {
       try {
-        if (btn.getAttribute("aria-expanded") === "false" || btn.classList.contains("collapsed")) {
-          btn.click();
-        }
+        btn.click();
       } catch (_) {}
     });
 
@@ -752,11 +759,8 @@ function navigateToFirstIncompleteLevel3Item() {
   const { allSubTopics, incompleteSubTopics } = parseThreeLevelCourseToC();
 
   if (allSubTopics.length > 0) {
-    console.group("NetAcad ToC Audit Trace");
-    allSubTopics.forEach((topic, i) => {
-      console.log(`[ToC #${i + 1}] "${topic.title}" -> ${topic.isCompleted ? "DONE ✔" : "UNDONE ⏳"}`);
-    });
-    console.groupEnd();
+    const doneCount = allSubTopics.filter((t) => t.isCompleted).length;
+    console.debug(`NetAcad ToC: ${doneCount}/${allSubTopics.length} topics completed.`);
   }
 
   if (incompleteSubTopics.length > 0) {

@@ -27,6 +27,8 @@ let isAutonomousRunning = false;
 let isAutonomousPaused = false;
 let isScrapeInFlight = false;
 let isCourseScrollerRunning = false;
+let scrollerCurrentSection = 0;   // current section index being processed
+let scrollerTotalSections = 0;    // total sections discovered from ToC
 const apiAnswerCache = new LruCache(50);
 
 // Lightweight fingerprint: hash of question count + first chars of each question
@@ -57,6 +59,20 @@ async function waitMs(ms) {
   while (elapsed < ms) {
     if (!isAutonomousRunning) return;
     while (isAutonomousPaused && isAutonomousRunning) {
+      await new Promise((r) => setTimeout(r, step));
+    }
+    await new Promise((r) => setTimeout(r, Math.min(step, ms - elapsed)));
+    elapsed += step;
+  }
+}
+
+// Wait helper for Course Scroller — respects pause state and scroller stop flag
+async function waitMsScroller(ms) {
+  const step = 100;
+  let elapsed = 0;
+  while (elapsed < ms) {
+    if (!isCourseScrollerRunning) return;
+    while (isAutonomousPaused && isCourseScrollerRunning) {
       await new Promise((r) => setTimeout(r, step));
     }
     await new Promise((r) => setTimeout(r, Math.min(step, ms - elapsed)));
@@ -361,62 +377,113 @@ async function runCourseScrollerLoop() {
   isCourseScrollerRunning = true;
   console.log("NetAcad AutoAnswer: Starting Efficient Course Scroller...");
 
-  const maxSubTopics = 250;
+  // Discover total sections for progress reporting
+  const tocFn = resolveFn("parseThreeLevelCourseToC");
+  if (tocFn) {
+    const { allSubTopics } = tocFn();
+    scrollerTotalSections = (allSubTopics || []).length;
+  }
+  scrollerCurrentSection = 0;
+
+  const maxSubTopics = 1000;
   let iterations = 0;
 
   try {
     while (isCourseScrollerRunning && iterations < maxSubTopics) {
       if (!isCourseScrollerRunning) break;
 
-      console.log(`NetAcad AutoAnswer: Course Scroller processing section #${iterations + 1}`);
-
-      // 1. Cohesive Sweep: Fast-forward videos + click interactive check/flipcard buttons
-      const videoFn = resolveFn("autoCompleteVideosOnPage");
-      if (videoFn) videoFn();
-
-      const checkBtnFn = resolveFn("autoClickAllCheckButtonsOnPage");
-      if (checkBtnFn) checkBtnFn();
-
-      // Record page data into local storage database
-      recordPageData();
-
-      // 2. Auto-Solve any "Check Your Understanding" / Quiz widgets on page
-      const hasQuizFn = resolveFn("detectQuizOrCheckYourUnderstandingOnPage");
-      const scrapeFn = resolveFn("scrapeData");
-      if (hasQuizFn && hasQuizFn()) {
-        if (scrapeFn) {
-          await scrapeFn();
-          const submitQuestionFn = resolveFn("autoSubmitQuestion");
-          if (submitQuestionFn) submitQuestionFn();
+      // Respect pause state — yields until resumed or stopped
+      if (isAutonomousPaused) {
+        console.log("NetAcad AutoAnswer: Course Scroller PAUSED ⏸️");
+        while (isAutonomousPaused && isCourseScrollerRunning) {
+          await new Promise((r) => setTimeout(r, 200));
         }
+        if (!isCourseScrollerRunning) break;
+        console.log("NetAcad AutoAnswer: Course Scroller RESUMED ▶️");
       }
 
-      // 3. One-Pass Fast Page Scroll
-      const scrollFn = resolveFn("autoScrollModulePage");
-      if (scrollFn) await scrollFn();
+      scrollerCurrentSection = iterations + 1;
 
-      if (!isCourseScrollerRunning) break;
+      try {
+        console.log(`NetAcad AutoAnswer: Course Scroller processing section #${iterations + 1}`);
 
-      // 4. Instant ToC Advancement to next incomplete section
-      const navFn = resolveFn("navigateToFirstIncompleteLevel3Item");
-      const fallbackNavFn = resolveFn("navigateToNextSubModule");
+        // 1. Cohesive Sweep: Fast-forward videos + click interactive check/flipcard buttons
+        const videoFn = resolveFn("autoCompleteVideosOnPage");
+        if (videoFn) videoFn();
 
-      let navigated = navFn ? navFn() : false;
-      if (!navigated && fallbackNavFn) {
-        navigated = fallbackNavFn();
+        const checkBtnFn = resolveFn("autoClickAllCheckButtonsOnPage");
+        if (checkBtnFn) checkBtnFn();
+
+        // Record page data into local storage database
+        await recordPageData();
+
+        // 2. Auto-Solve any "Check Your Understanding" / Quiz widgets on page
+        // Handles multi-question pages (up to 10 questions per page)
+        const hasQuizFn = resolveFn("detectQuizOrCheckYourUnderstandingOnPage");
+        const scrapeFn = resolveFn("scrapeData");
+        const detectFinalFn = resolveFn("detectFinalSubmitPage");
+        const nextBtnFn = resolveFn("clickNextQuestionButton") || resolveFn("clickNextQuestionTab");
+
+        if (hasQuizFn && hasQuizFn() && scrapeFn) {
+          const MAX_QUESTIONS_PER_PAGE = 10;
+          let qStep = 0;
+          while (isCourseScrollerRunning && qStep < MAX_QUESTIONS_PER_PAGE) {
+            // Stop if we hit the final assessment submit page (should not happen in CYU, but guard)
+            if (detectFinalFn && detectFinalFn()) break;
+
+            await scrapeFn();          // answer + auto-select current question
+            await waitMsScroller(300); // allow selection to register
+
+            if (!isCourseScrollerRunning) break;
+
+            // Try to advance to next question on this page
+            const moved = nextBtnFn ? nextBtnFn() : false;
+            if (!moved) {
+              // No more questions on this page
+              break;
+            }
+            await waitMsScroller(650); // wait for next question to render
+            qStep++;
+
+            // Re-check if we still have a quiz — exit if navigated to a different section
+            if (!hasQuizFn || !hasQuizFn()) break;
+          }
+          console.debug(`NetAcad AutoAnswer: Course Scroller — processed ${qStep + 1} question(s) on CYU page.`);
+        }
+
+        // 3. One-Pass Fast Page Scroll
+        const scrollFn = resolveFn("autoScrollModulePage");
+        if (scrollFn) await scrollFn();
+
+        if (!isCourseScrollerRunning) break;
+
+        // 4. Instant ToC Advancement to next incomplete section
+        const navFn = resolveFn("navigateToFirstIncompleteLevel3Item");
+        const fallbackNavFn = resolveFn("navigateToNextSubModule");
+
+        let navigated = navFn ? navFn() : false;
+        if (!navigated && fallbackNavFn) {
+          navigated = fallbackNavFn();
+        }
+
+        if (!navigated) {
+          console.log("NetAcad AutoAnswer: Course Scroller — all course topics 100% completed! 🎉");
+          break;
+        }
+
+        // Wait for next section DOM to render (respects pause/stop)
+        await waitMsScroller(1200);
+        iterations++;
+      } catch (sectionErr) {
+        console.error(`NetAcad AutoAnswer: Course Scroller error on section #${iterations + 1}:`, sectionErr);
+        await waitMsScroller(1500);
+        iterations++;
       }
-
-      if (!navigated) {
-        console.log("NetAcad AutoAnswer: Course Scroller — all course topics 100% completed! 🎉");
-        break;
-      }
-
-      // Wait for next section DOM to render
-      await new Promise((r) => setTimeout(r, 1200));
-      iterations++;
     }
   } finally {
     isCourseScrollerRunning = false;
+    scrollerCurrentSection = 0;
+    scrollerTotalSections = 0;
     console.log("NetAcad AutoAnswer: Course Scroller finished.");
   }
 }
@@ -709,6 +776,9 @@ const scraperExports = {
   toggleAutonomousPause,
   stopAutonomousLoop,
   stopCourseScrollerLoop,
+  // Progress state (read-only from outside — content.js uses these for getStatus)
+  get scrollerCurrentSection() { return scrollerCurrentSection; },
+  get scrollerTotalSections()  { return scrollerTotalSections;  },
 };
 
 if (typeof window !== "undefined") {

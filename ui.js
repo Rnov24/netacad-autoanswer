@@ -695,8 +695,9 @@ function navigateToNextSubModule() {
 function cleanOptionTextForMatch(text) {
   if (!text || typeof text !== "string") return "";
   let clean = text.trim();
-  clean = clean.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
-  return clean.toLowerCase();
+  const stripped = clean.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
+  const result = (stripped.length > 0 ? stripped : clean).toLowerCase();
+  return result;
 }
 
 function stripNonAlphanumeric(text) {
@@ -728,7 +729,7 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
       document,
     ].filter((r) => r && r instanceof Node);
 
-    // 1. Check for Text Input Fields (Fill-in-the-blank)
+    // Tier 1: Check for Text Input Fields (Fill-in-the-blank)
     for (const root of searchRoots) {
       const textInputs = Array.from(root.querySelectorAll("input[type='text'], input[type='search'], input:not([type]), textarea"));
       const visibleInputs = textInputs.filter((i) => !i.disabled && i.type !== "hidden" && i.type !== "radio" && i.type !== "checkbox" && i.type !== "button" && i.type !== "submit");
@@ -748,7 +749,7 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
       }
     }
 
-    // 2. Gather ALL option candidate nodes across all search roots
+    // Tier 2: Gather Option Choice Nodes
     let optionNodes = [];
     searchRoots.forEach((root) => {
       const nodes = Array.from(
@@ -762,16 +763,16 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
     const uniqueNodes = Array.from(new Set(optionNodes));
 
     // Build candidate list with labels and inputs
-    const parsedCandidates = uniqueNodes.map((node) => {
+    const parsedCandidates = uniqueNodes.map((node, index) => {
       const labelEl = node.querySelector(".mcq__item-label, .mat-radio-label, .mat-checkbox-label, .component__option-label, label, code, span") || node;
       const rawText = (labelEl.innerText || labelEl.textContent || "").trim();
       const cleanText = cleanOptionTextForMatch(rawText);
       const alphaText = stripNonAlphanumeric(cleanText);
       const inputEl = node.querySelector("input[type='checkbox'], input[type='radio']") || (node.tagName === "INPUT" ? node : null);
-      return { node, labelEl, rawText, cleanText, alphaText, inputEl };
-    }).filter((c) => c.cleanText.length > 0);
+      return { index, node, labelEl, rawText, cleanText, alphaText, inputEl };
+    });
 
-    targetAnswers.forEach((targetAns) => {
+    targetAnswers.forEach((targetAns, tIdx) => {
       if (!targetAns) return;
 
       const targetAlpha = stripNonAlphanumeric(targetAns);
@@ -780,14 +781,18 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
 
       parsedCandidates.forEach((cand) => {
         let score = 0;
-        if (cand.cleanText === targetAns) {
+        const candRawLower = cand.rawText.trim().toLowerCase();
+
+        if (cand.cleanText === targetAns || candRawLower === targetAns) {
           score = 100;
         } else if (cand.alphaText && cand.alphaText === targetAlpha) {
           score = 95;
+        } else if (/^\d+$/.test(targetAns) && (cand.cleanText === targetAns || candRawLower.includes(targetAns))) {
+          score = 90;
         } else {
-          if (targetAlpha.length >= 3 && cand.alphaText.includes(targetAlpha)) {
+          if (targetAlpha.length >= 2 && cand.alphaText.includes(targetAlpha)) {
             score = 85;
-          } else if (cand.alphaText.length >= 3 && targetAlpha.includes(cand.alphaText)) {
+          } else if (cand.alphaText.length >= 2 && targetAlpha.includes(cand.alphaText)) {
             score = 80;
           }
         }
@@ -798,7 +803,33 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         }
       });
 
-      if (bestMatch && highestScore >= 75) {
+      // Tier 3: Positional Number & Letter Fallback
+      if (!bestMatch || highestScore < 70) {
+        if (/^[1-9]\d*$/.test(targetAns)) {
+          const numIdx = parseInt(targetAns, 10) - 1;
+          if (numIdx >= 0 && numIdx < parsedCandidates.length) {
+            bestMatch = parsedCandidates[numIdx];
+            highestScore = 75;
+            console.log(`NetAcad UI: Positional number fallback matched target "${targetAns}" to option #${numIdx + 1} ("${bestMatch.rawText}")`);
+          }
+        } else if (/^[a-z]$/i.test(targetAns)) {
+          const letterIdx = targetAns.toLowerCase().charCodeAt(0) - 97;
+          if (letterIdx >= 0 && letterIdx < parsedCandidates.length) {
+            bestMatch = parsedCandidates[letterIdx];
+            highestScore = 75;
+            console.log(`NetAcad UI: Positional letter fallback matched target "${targetAns}" to option #${letterIdx + 1} ("${bestMatch.rawText}")`);
+          }
+        }
+      }
+
+      // Tier 4: Direct Index Fallback
+      if (!bestMatch && parsedCandidates.length > tIdx) {
+        bestMatch = parsedCandidates[tIdx];
+        highestScore = 50;
+        console.log(`NetAcad UI: Direct index fallback matched target "${targetAns}" to option #${tIdx + 1}`);
+      }
+
+      if (bestMatch) {
         console.debug(`NetAcad UI: Auto-selecting option "${bestMatch.rawText}" for target "${targetAns}" (Score: ${highestScore})`);
 
         if (bestMatch.inputEl) {
@@ -818,7 +849,7 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         highlightEl.style.borderRadius = "6px";
         highlightEl.style.transition = "all 0.2s ease-in-out";
       } else {
-        console.warn(`NetAcad UI: Could not find reliable match for target answer: "${targetAns}"`);
+        console.warn(`NetAcad UI: Could not find any candidate option in DOM for target answer: "${targetAns}"`);
       }
     });
   } catch (err) {

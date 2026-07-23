@@ -699,13 +699,15 @@ function cleanOptionTextForMatch(text) {
   return clean.toLowerCase();
 }
 
+function stripNonAlphanumeric(text) {
+  return (text || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 async function autoSelectOptionsInDom(mcqViewElement, answerText) {
   if (!mcqViewElement || !answerText || answerText.toLowerCase().startsWith("error:")) return;
 
   try {
-    const sr = mcqViewElement.shadowRoot;
-    if (!sr) return;
-
+    const sr = mcqViewElement ? mcqViewElement.shadowRoot : null;
     const isMatching = (mcqViewElement && mcqViewElement.tagName && mcqViewElement.tagName.toLowerCase() === "object-matching-view") ||
                        (answerText && answerText.includes(" /// ") && /^A:\s+/i.test(answerText.trim()));
 
@@ -717,44 +719,75 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
     const rawAnswers = answerText.split(" /// ").map((a) => a.trim()).filter(Boolean);
     const targetAnswers = rawAnswers.map((a) => cleanOptionTextForMatch(a));
 
-    const baseView = sr.querySelector('base-view[type="component"]');
-    const searchRoot = (baseView && baseView.shadowRoot) ? baseView.shadowRoot : sr;
+    const baseView = sr ? sr.querySelector('base-view[type="component"]') : null;
+    const searchRoots = [
+      sr,
+      baseView && baseView.shadowRoot ? baseView.shadowRoot : null,
+      mcqViewElement && mcqViewElement.getRootNode ? mcqViewElement.getRootNode() : null,
+      ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : []),
+      document,
+    ].filter((r) => r && r instanceof Node);
 
-    // Query specific choice option elements (preferring leaf/option items over container wrappers)
-    let optionNodes = Array.from(searchRoot.querySelectorAll("mat-radio-button, mat-checkbox, .component__option, .mcq__item, label[for]"));
-    if (optionNodes.length === 0) {
-      optionNodes = Array.from(searchRoot.querySelectorAll(".mcq__item-label, label, input[type='radio'], input[type='checkbox']"));
+    // 1. Check for Text Input Fields (Fill-in-the-blank)
+    for (const root of searchRoots) {
+      const textInputs = Array.from(root.querySelectorAll("input[type='text'], input[type='search'], input:not([type]), textarea"));
+      const visibleInputs = textInputs.filter((i) => !i.disabled && i.type !== "hidden" && i.type !== "radio" && i.type !== "checkbox" && i.type !== "button" && i.type !== "submit");
+      if (visibleInputs.length > 0) {
+        visibleInputs.forEach((inputEl, idx) => {
+          const val = rawAnswers[idx] || rawAnswers[0];
+          if (val) {
+            inputEl.value = val;
+            inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+            inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+            inputEl.style.outline = "2px solid #10b981";
+            inputEl.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+            console.log(`NetAcad UI: Auto-filled text input field with "${val}"`);
+          }
+        });
+        return;
+      }
     }
 
-    // Build parsed candidates list
-    const parsedCandidates = optionNodes.map((node) => {
-      const labelEl = node.querySelector(".mcq__item-label, .mat-radio-label, .mat-checkbox-label, label, span") || node;
+    // 2. Gather ALL option candidate nodes across all search roots
+    let optionNodes = [];
+    searchRoots.forEach((root) => {
+      const nodes = Array.from(
+        root.querySelectorAll(
+          "mat-radio-button, mat-checkbox, .component__option, .mcq__item, .mcq__option, label[for], .mcq__item-label, label, [class*='option'], [class*='choice'], [class*='item']"
+        )
+      );
+      optionNodes.push(...nodes);
+    });
+
+    const uniqueNodes = Array.from(new Set(optionNodes));
+
+    // Build candidate list with labels and inputs
+    const parsedCandidates = uniqueNodes.map((node) => {
+      const labelEl = node.querySelector(".mcq__item-label, .mat-radio-label, .mat-checkbox-label, .component__option-label, label, code, span") || node;
       const rawText = (labelEl.innerText || labelEl.textContent || "").trim();
       const cleanText = cleanOptionTextForMatch(rawText);
+      const alphaText = stripNonAlphanumeric(cleanText);
       const inputEl = node.querySelector("input[type='checkbox'], input[type='radio']") || (node.tagName === "INPUT" ? node : null);
-      return { node, labelEl, rawText, cleanText, inputEl };
-    });
+      return { node, labelEl, rawText, cleanText, alphaText, inputEl };
+    }).filter((c) => c.cleanText.length > 0);
 
     targetAnswers.forEach((targetAns) => {
       if (!targetAns) return;
 
+      const targetAlpha = stripNonAlphanumeric(targetAns);
       let bestMatch = null;
       let highestScore = 0;
 
       parsedCandidates.forEach((cand) => {
-        if (!cand.cleanText) return;
-
         let score = 0;
         if (cand.cleanText === targetAns) {
           score = 100;
+        } else if (cand.alphaText && cand.alphaText === targetAlpha) {
+          score = 95;
         } else {
-          const normCand = cand.cleanText.replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
-          const normTarget = targetAns.replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
-          if (normCand === normTarget) {
-            score = 95;
-          } else if (normTarget.length >= 5 && normCand.includes(normTarget)) {
+          if (targetAlpha.length >= 3 && cand.alphaText.includes(targetAlpha)) {
             score = 85;
-          } else if (normCand.length >= 5 && normTarget.includes(normCand)) {
+          } else if (cand.alphaText.length >= 3 && targetAlpha.includes(cand.alphaText)) {
             score = 80;
           }
         }
@@ -765,7 +798,7 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         }
       });
 
-      if (bestMatch && highestScore >= 80) {
+      if (bestMatch && highestScore >= 75) {
         console.debug(`NetAcad UI: Auto-selecting option "${bestMatch.rawText}" for target "${targetAns}" (Score: ${highestScore})`);
 
         if (bestMatch.inputEl) {

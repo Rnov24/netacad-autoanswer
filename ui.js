@@ -81,6 +81,12 @@ function createAiAssistantUI(uiContainerId, index) {
   headerDiv.appendChild(badge);
   uiContainer.appendChild(headerDiv);
 
+  const runningBanner = document.createElement("div");
+  runningBanner.className = "ai-running-banner";
+  runningBanner.style.display = "none";
+  runningBanner.innerHTML = `<span class="netacad-running-dot"></span> ⚡ Quiz Auto-Pilot is Running... Please do not switch or close this tab!`;
+  uiContainer.appendChild(runningBanner);
+
   const aiAnswerDisplay = document.createElement("div");
   aiAnswerDisplay.className = "ai-answer-display";
   Object.assign(aiAnswerDisplay.style, {

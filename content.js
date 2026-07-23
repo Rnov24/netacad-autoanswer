@@ -1,4 +1,57 @@
-console.log("NetAcad AutoAnswer content script loaded and ready.");
+// Add pulse animations and status banner styles to page head
+const statusStyleEl = document.createElement("style");
+statusStyleEl.textContent = `
+  @keyframes netacad-pulse-glow {
+    0% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); transform: scale(1); }
+    50% { box-shadow: 0 0 22px rgba(16, 185, 129, 1); transform: scale(1.04); }
+    100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); transform: scale(1); }
+  }
+  @keyframes netacad-dot-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .netacad-running-btn {
+    animation: netacad-pulse-glow 2s infinite ease-in-out !important;
+    background-color: #059669 !important;
+    border-color: #34d399 !important;
+    min-width: 165px !important;
+    width: auto !important;
+    height: 42px !important;
+    padding: 0 16px !important;
+    border-radius: 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.5px !important;
+  }
+  .netacad-running-dot {
+    width: 9px;
+    height: 9px;
+    background-color: #34d399;
+    border-radius: 50%;
+    display: inline-block;
+    animation: netacad-dot-blink 1.2s infinite ease-in-out;
+  }
+  .ai-running-banner {
+    background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+    color: #ecfdf5;
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #10b981;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+  }
+`;
+if (document.head) document.head.appendChild(statusStyleEl);
+else document.addEventListener("DOMContentLoaded", () => document.head.appendChild(statusStyleEl));
 
 const FLOATING_BTN_ID = "netacad-ai-floating-process-btn";
 
@@ -42,12 +95,16 @@ function injectFloatingButton() {
   });
 
   btn.addEventListener("mouseover", () => {
-    btn.style.backgroundColor = "#1d4ed8";
-    btn.style.transform = "scale(1.08)";
+    if (!btn.classList.contains("netacad-running-btn")) {
+      btn.style.backgroundColor = "#1d4ed8";
+      btn.style.transform = "scale(1.08)";
+    }
   });
   btn.addEventListener("mouseout", () => {
-    btn.style.backgroundColor = "#2563eb";
-    btn.style.transform = "scale(1)";
+    if (!btn.classList.contains("netacad-running-btn")) {
+      btn.style.backgroundColor = "#2563eb";
+      btn.style.transform = "scale(1)";
+    }
   });
 
   // --- Drag state ---
@@ -76,7 +133,7 @@ function injectFloatingButton() {
     if (p && typeof p.x === "number" && typeof p.y === "number") {
       applyPosition(p.x, p.y);
     } else {
-      applyPosition(window.innerWidth - 66, window.innerHeight - 66);
+      applyPosition(window.innerWidth - 180, window.innerHeight - 66);
     }
   });
 
@@ -132,11 +189,17 @@ function injectFloatingButton() {
       ev.stopPropagation();
       return;
     }
+    const isAutoRunning = !!(window.isAutonomousRunning || globalThis.isAutonomousRunning);
+    if (isAutoRunning) {
+      const stopQuizFn = resolveFn("stopAutonomousLoop");
+      if (stopQuizFn) stopQuizFn();
+      return;
+    }
+
     const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = "⚡";
 
-    // Trigger quiz auto-pilot via background broadcast
     chrome.runtime.sendMessage({ action: "broadcastProcessPage" }, () => {
       if (chrome.runtime.lastError) {
         console.debug("NetAcad Scraper: broadcast error", chrome.runtime.lastError.message);
@@ -145,15 +208,75 @@ function injectFloatingButton() {
         btn.textContent = "✓";
       }
       setTimeout(() => {
-        btn.textContent = original;
         btn.disabled = false;
+        updateFloatingButtonState();
       }, 1800);
     });
   });
 
   document.body.appendChild(btn);
-  console.debug("NetAcad Scraper: Floating button injected.");
+  console.debug("NetAcad Scraper: Floating button injected on right.");
 }
+
+function updateFloatingButtonState() {
+  const btn = document.getElementById(FLOATING_BTN_ID);
+  const isAutoRunning = !!(window.isAutonomousRunning || globalThis.isAutonomousRunning);
+  const isScrollRunning = !!(window.isCourseScrollerRunning || globalThis.isCourseScrollerRunning);
+  const isPaused = !!(window.isAutonomousPaused || globalThis.isAutonomousPaused);
+
+  if (btn) {
+    if (isAutoRunning) {
+      if (isPaused) {
+        btn.className = "";
+        btn.innerHTML = `<span class="netacad-running-dot" style="background-color:#fbbf24"></span> ⏸ PAUSED`;
+        btn.style.backgroundColor = "#d97706";
+      } else {
+        btn.className = "netacad-running-btn";
+        btn.innerHTML = `<span class="netacad-running-dot"></span> ⚡ AUTO-PILOT RUNNING...`;
+      }
+    } else if (isScrollRunning) {
+      btn.className = "netacad-running-btn";
+      btn.innerHTML = `<span class="netacad-running-dot"></span> 📜 SCROLLER RUNNING...`;
+    } else {
+      btn.className = "";
+      btn.innerHTML = "AI";
+      btn.style.backgroundColor = "#2563eb";
+      btn.style.width = "42px";
+      btn.style.height = "42px";
+      btn.style.padding = "0";
+      btn.style.borderRadius = "50%";
+      btn.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.4)";
+    }
+  }
+
+  // Update AI Assistant Panel Running Banners
+  const banners = document.querySelectorAll(".ai-running-banner");
+  banners.forEach((banner) => {
+    if (isAutoRunning || isScrollRunning) {
+      banner.style.display = "flex";
+      banner.innerHTML = `<span class="netacad-running-dot"></span> ${
+        isAutoRunning ? "⚡ Quiz Auto-Pilot is Running... Please do not switch or close this tab!" : "📜 Course Scroller is Running... Please do not switch or close this tab!"
+      }`;
+    } else {
+      banner.style.display = "none";
+    }
+  });
+}
+
+// Sync running status state continuously
+setInterval(updateFloatingButtonState, 500);
+
+// Warn user before leaving/closing tab if process is active
+window.addEventListener("beforeunload", (e) => {
+  const isAutoRunning = !!(window.isAutonomousRunning || globalThis.isAutonomousRunning);
+  const isScrollRunning = !!(window.isCourseScrollerRunning || globalThis.isCourseScrollerRunning);
+
+  if (isAutoRunning || isScrollRunning) {
+    const confirmationMessage = "NetAcad Automation is currently active! Leaving or closing this tab will stop the process.";
+    (e || window.event).returnValue = confirmationMessage;
+    return confirmationMessage;
+  }
+});
 
 let debounceTimeout;
 function debouncedScrape() {
@@ -175,7 +298,6 @@ function initMutationObserver() {
   if (!pageView?.shadowRoot) return;
 
   const observer = new MutationObserver((mutations) => {
-    // Ignore mutations caused by our own AI UI panels
     const isSelfMutation = mutations.every((m) => {
       return [...(m.addedNodes || []), ...(m.removedNodes || [])].every(
         (node) =>
@@ -216,6 +338,15 @@ injectFloatingButton();
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (!request || !request.action) return false;
 
+  // ── Status Poll ──
+  if (request.action === "getStatus") {
+    const isAutoRunning = !!(window.isAutonomousRunning || globalThis.isAutonomousRunning);
+    const isScrollRunning = !!(window.isCourseScrollerRunning || globalThis.isCourseScrollerRunning);
+    const isPaused = !!(window.isAutonomousPaused || globalThis.isAutonomousPaused);
+    sendResponse({ isAutoRunning, isScrollRunning, isPaused });
+    return true;
+  }
+
   // ── Quiz Auto-Pilot ──
   if (request.action === "processPage") {
     if (!document.querySelector("app-root")) return false;
@@ -230,7 +361,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     const fn = autoLoopFn || scrapeFn;
     if (fn) {
-      fn().then(() => sendResponse({ success: true })).catch((err) => sendResponse({ success: false, error: String(err) }));
+      fn().then(() => {
+        updateFloatingButtonState();
+        sendResponse({ success: true });
+      }).catch((err) => sendResponse({ success: false, error: String(err) }));
       return true; // async
     }
     sendResponse({ success: false, error: "scrapeData not found" });
@@ -242,6 +376,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const scrollerFn = resolveFn("runCourseScrollerLoop");
     if (scrollerFn) {
       scrollerFn();
+      updateFloatingButtonState();
       sendResponse({ success: true });
     } else {
       sendResponse({ success: false, error: "runCourseScrollerLoop not found" });
@@ -255,6 +390,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const stopScrollFn = resolveFn("stopCourseScrollerLoop");
     if (stopQuizFn) stopQuizFn();
     if (stopScrollFn) stopScrollFn();
+    updateFloatingButtonState();
     sendResponse({ success: true });
     return true;
   }
@@ -264,6 +400,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const toggleFn = resolveFn("toggleAutonomousPause");
     if (toggleFn) {
       const result = toggleFn();
+      updateFloatingButtonState();
       sendResponse({ success: true, isPaused: result.isPaused, isRunning: result.isRunning });
     } else {
       sendResponse({ success: false, error: "toggleAutonomousPause not found" });

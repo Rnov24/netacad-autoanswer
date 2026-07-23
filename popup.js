@@ -134,7 +134,41 @@ document.addEventListener("DOMContentLoaded", () => {
   autoSelectToggle.addEventListener("change",      () => chrome.storage.sync.set({ autoSelect: autoSelectToggle.checked }));
   autoSubmitToggle.addEventListener("change",      () => chrome.storage.sync.set({ autoSubmit: autoSubmitToggle.checked }));
   showAnswersToggle.addEventListener("change",     () => chrome.storage.sync.set({ showAnswers: showAnswersToggle.checked }));
-  processOnSwitchToggle.addEventListener("change", () => chrome.storage.sync.set({ processOnSwitch: processOnSwitchToggle.checked }));
+  function pollTabStatus() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs.length || !tabs[0].id) return;
+      chrome.tabs.sendMessage(tabs[0].id, { action: "getStatus" }, (res) => {
+        if (chrome.runtime.lastError || !res) return;
+        const textEl = document.getElementById("popupStatusText");
+        const dotEl = document.getElementById("popupStatusDot");
+        const badgeEl = document.getElementById("popupStatusBadge");
+        if (!textEl || !dotEl) return;
+
+        if (res.isAutoRunning) {
+          if (res.isPaused) {
+            textEl.textContent = "Auto-Pilot Paused ⏸";
+            badgeEl.style.color = "#fbbf24";
+            dotEl.style.background = "#fbbf24";
+          } else {
+            textEl.textContent = "Auto-Pilot Active ⚡";
+            badgeEl.style.color = "#34d399";
+            dotEl.style.background = "#34d399";
+          }
+        } else if (res.isScrollRunning) {
+          textEl.textContent = "Course Scroller Active 📜";
+          badgeEl.style.color = "#38bdf8";
+          dotEl.style.background = "#38bdf8";
+        } else {
+          textEl.textContent = "Ready ⚪";
+          badgeEl.style.color = "#94a3b8";
+          dotEl.style.background = "#94a3b8";
+        }
+      });
+    });
+  }
+
+  pollTabStatus();
+  setInterval(pollTabStatus, 1000);
 
   // ── Status helpers ──
   let statusTimer;

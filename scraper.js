@@ -509,10 +509,30 @@ async function recordPageData() {
       return;
     }
 
+    // Determine completion status from ToC
+    let sectionStatus = "UNKNOWN";
+    let isCompleted = false;
+    const tocFn = resolveFn("parseThreeLevelCourseToC");
+    if (tocFn) {
+      const { allSubTopics } = tocFn();
+      const matched = allSubTopics.find(
+        (t) =>
+          sectionTitle.includes(t.title) ||
+          t.title.includes(sectionTitle) ||
+          (pageTitle && pageTitle.includes(t.title))
+      );
+      if (matched) {
+        isCompleted = matched.isCompleted;
+        sectionStatus = matched.isCompleted ? "DONE ✔" : "UNDONE ⏳";
+      }
+    }
+
     const entry = {
       url: window.location.href,
       pageTitle,
       sectionTitle,
+      status: sectionStatus,
+      isCompleted: isCompleted,
       timestamp: new Date().toISOString(),
       paragraphs: uniqueParagraphs,
       codeBlocks: uniqueCodeBlocks,
@@ -522,11 +542,14 @@ async function recordPageData() {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
       const res = await chrome.storage.local.get(["scrapedCourseDb"]);
       const db = res.scrapedCourseDb || [];
-      if (!db.some((e) => e.sectionTitle === entry.sectionTitle && e.pageTitle === entry.pageTitle)) {
+      const existingIdx = db.findIndex((e) => e.sectionTitle === entry.sectionTitle && e.pageTitle === entry.pageTitle);
+      if (existingIdx >= 0) {
+        db[existingIdx] = entry; // update with latest status & data
+      } else {
         db.push(entry);
-        await chrome.storage.local.set({ scrapedCourseDb: db });
-        console.log(`NetAcad Data Exporter: Recorded section "${entry.sectionTitle || entry.pageTitle}" (${db.length} sections recorded).`);
       }
+      await chrome.storage.local.set({ scrapedCourseDb: db });
+      console.log(`NetAcad Data Exporter: Recorded section "${entry.sectionTitle}" [${sectionStatus}] (${db.length} total).`);
     }
   } catch (err) {
     console.error("NetAcad Data Exporter error:", err);
@@ -548,18 +571,41 @@ async function exportScrapedCourseData(format = "markdown") {
   let filename = `netacad_course_export_${Date.now()}`;
   let mimeType = "text/plain";
 
+  const doneCount = db.filter((item) => item.isCompleted || (item.status && item.status.includes("DONE"))).length;
+  const undoneCount = db.length - doneCount;
+
   if (format === "json") {
-    content = JSON.stringify(db, null, 2);
+    const jsonOutput = {
+      meta: {
+        exportedAt: new Date().toISOString(),
+        totalSectionsRecorded: db.length,
+        doneSectionsCount: doneCount,
+        undoneSectionsCount: undoneCount,
+      },
+      sections: db,
+    };
+    content = JSON.stringify(jsonOutput, null, 2);
     filename += ".json";
     mimeType = "application/json";
   } else {
     filename += ".md";
     mimeType = "text/markdown";
-    content = `# NetAcad Course Full Data Export\n\n*Exported on ${new Date().toLocaleString()} | ${db.length} Sections Scraped*\n\n---\n\n`;
+    content = `# NetAcad Course Full Data Export & Audit Report\n\n`;
+    content += `*Exported on ${new Date().toLocaleString()} | ${db.length} Sections Total (${doneCount} DONE ✔ | ${undoneCount} UNDONE ⏳)*\n\n`;
+
+    content += `## Course Section Audit Summary\n\n`;
+    content += `| # | Section Title | Completion Status |\n`;
+    content += `|---|---|---|\n`;
+    db.forEach((item, idx) => {
+      const statusLabel = item.isCompleted || (item.status && item.status.includes("DONE")) ? "DONE ✔" : "UNDONE ⏳";
+      content += `| ${idx + 1} | ${item.sectionTitle || item.pageTitle} | ${statusLabel} |\n`;
+    });
+    content += `\n---\n\n`;
 
     db.forEach((item, idx) => {
-      content += `## ${idx + 1}. ${item.sectionTitle || item.pageTitle}\n\n`;
-      content += `**Source URL**: ${item.url}\n\n`;
+      const statusLabel = item.isCompleted || (item.status && item.status.includes("DONE")) ? "DONE ✔" : "UNDONE ⏳";
+      content += `## ${idx + 1}. ${item.sectionTitle || item.pageTitle} [${statusLabel}]\n\n`;
+      content += `**Status**: \`${statusLabel}\` | **Source URL**: ${item.url}\n\n`;
 
       if (item.paragraphs && item.paragraphs.length > 0) {
         content += `### Course Content\n\n`;
@@ -572,6 +618,15 @@ async function exportScrapedCourseData(format = "markdown") {
         content += `### Code Snippets\n\n`;
         item.codeBlocks.forEach((code) => {
           content += "```python\n" + code + "\n```\n\n";
+        });
+      }
+
+      if (item.questions && item.questions.length > 0) {
+        content += `### Questions & Answers\n\n`;
+        item.questions.forEach((q, qIdx) => {
+          content += `**Q${qIdx + 1}: ${q.question}**\n`;
+          (q.options || []).forEach((opt) => (content += `- ${opt}\n`));
+          content += "\n";
         });
       }
 

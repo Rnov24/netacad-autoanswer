@@ -377,6 +377,9 @@ async function runCourseScrollerLoop() {
       const checkBtnFn = resolveFn("autoClickAllCheckButtonsOnPage");
       if (checkBtnFn) checkBtnFn();
 
+      // Record page data into local storage database
+      recordPageData();
+
       // 2. Auto-Solve any "Check Your Understanding" / Quiz widgets on page
       const hasQuizFn = resolveFn("detectQuizOrCheckYourUnderstandingOnPage");
       const scrapeFn = resolveFn("scrapeData");
@@ -418,10 +421,131 @@ async function runCourseScrollerLoop() {
   }
 }
 
+// ─────────────────────────────────────────────
+// FUNCTION 4: FULL COURSE DATA SCRAPER & EXPORTER
+// ─────────────────────────────────────────────
+async function recordPageData() {
+  try {
+    const pageTitle = (document.title || "").replace(/- NetAcad/i, "").trim();
+    const roots = [document, ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : [])];
+
+    let headingTexts = [];
+    let paragraphTexts = [];
+    let codeBlocks = [];
+
+    roots.forEach((root) => {
+      const hEls = Array.from(root.querySelectorAll("h1, h2, h3, h4, .component__title, [class*='title']"));
+      hEls.forEach((h) => {
+        const txt = (h.innerText || h.textContent || "").trim();
+        if (txt && txt.length > 2) headingTexts.push(txt);
+      });
+
+      const pEls = Array.from(root.querySelectorAll("p, article, .component__content, [class*='content'], [class*='text']"));
+      pEls.forEach((p) => {
+        const txt = (p.innerText || p.textContent || "").trim();
+        if (txt && txt.length > 15 && !txt.startsWith("<")) paragraphTexts.push(txt);
+      });
+
+      const cEls = Array.from(root.querySelectorAll("pre, code, [class*='code'], [class*='terminal'], [class*='snippet'], table"));
+      cEls.forEach((c) => {
+        const txt = (c.innerText || c.textContent || "").trim();
+        if (txt && txt.length > 5) codeBlocks.push(txt);
+      });
+    });
+
+    const uniqueHeadings = [...new Set(headingTexts)].slice(0, 5);
+    const uniqueParagraphs = [...new Set(paragraphTexts)].slice(0, 30);
+    const uniqueCodeBlocks = [...new Set(codeBlocks)].slice(0, 10);
+
+    const sectionTitle = uniqueHeadings.length > 0 ? uniqueHeadings.join(" | ") : pageTitle;
+
+    const entry = {
+      url: window.location.href,
+      pageTitle,
+      sectionTitle,
+      timestamp: new Date().toISOString(),
+      paragraphs: uniqueParagraphs,
+      codeBlocks: uniqueCodeBlocks,
+    };
+
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      const res = await chrome.storage.local.get(["scrapedCourseDb"]);
+      const db = res.scrapedCourseDb || [];
+      if (!db.some((e) => e.sectionTitle === entry.sectionTitle && e.pageTitle === entry.pageTitle)) {
+        db.push(entry);
+        await chrome.storage.local.set({ scrapedCourseDb: db });
+        console.log(`NetAcad Data Exporter: Recorded section "${entry.sectionTitle || entry.pageTitle}" (${db.length} sections recorded).`);
+      }
+    }
+  } catch (err) {
+    console.error("NetAcad Data Exporter error:", err);
+  }
+}
+
+async function exportScrapedCourseData(format = "markdown") {
+  if (typeof chrome === "undefined" || !chrome.storage || !chrome.storage.local) return;
+
+  const res = await chrome.storage.local.get(["scrapedCourseDb"]);
+  const db = res.scrapedCourseDb || [];
+
+  if (db.length === 0) {
+    alert("No course data recorded yet! Run 'Auto-Scroll & Complete Module' or navigate through course pages first.");
+    return;
+  }
+
+  let content = "";
+  let filename = `netacad_course_export_${Date.now()}`;
+  let mimeType = "text/plain";
+
+  if (format === "json") {
+    content = JSON.stringify(db, null, 2);
+    filename += ".json";
+    mimeType = "application/json";
+  } else {
+    filename += ".md";
+    mimeType = "text/markdown";
+    content = `# NetAcad Course Full Data Export\n\n*Exported on ${new Date().toLocaleString()} | ${db.length} Sections Scraped*\n\n---\n\n`;
+
+    db.forEach((item, idx) => {
+      content += `## ${idx + 1}. ${item.sectionTitle || item.pageTitle}\n\n`;
+      content += `**Source URL**: ${item.url}\n\n`;
+
+      if (item.paragraphs && item.paragraphs.length > 0) {
+        content += `### Course Content\n\n`;
+        item.paragraphs.forEach((p) => {
+          content += `${p}\n\n`;
+        });
+      }
+
+      if (item.codeBlocks && item.codeBlocks.length > 0) {
+        content += `### Code Snippets\n\n`;
+        item.codeBlocks.forEach((code) => {
+          content += "```python\n" + code + "\n```\n\n";
+        });
+      }
+
+      content += `---\n\n`;
+    });
+  }
+
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  console.log(`NetAcad Data Exporter: Downloaded ${filename}!`);
+}
+
 const scraperExports = {
   scrapeData,
   runAutonomousLoop,
   runCourseScrollerLoop,
+  recordPageData,
+  exportScrapedCourseData,
   pauseAutonomousLoop,
   resumeAutonomousLoop,
   toggleAutonomousPause,

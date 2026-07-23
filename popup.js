@@ -272,4 +272,22 @@ document.addEventListener("DOMContentLoaded", () => {
       setStatus("Stopped ⏹️", "#f87171");
     });
   });
+
+  // ── Export Course Data ──
+  const exportMdBtn = document.getElementById("exportMdBtn");
+  const exportJsonBtn = document.getElementById("exportJsonBtn");
+
+  if (exportMdBtn) {
+    exportMdBtn.addEventListener("click", () => {
+      setStatus("Exporting Markdown data...", "#0d9488", 2000);
+      sendToTab({ action: "exportCourseData", format: "markdown" });
+    });
+  }
+
+  if (exportJsonBtn) {
+    exportJsonBtn.addEventListener("click", () => {
+      setStatus("Exporting JSON data...", "#6366f1", 2000);
+      sendToTab({ action: "exportCourseData", format: "json" });
+    });
+  }
 });

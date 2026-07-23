@@ -347,6 +347,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // ── Export Course Data ──
+  if (request.action === "exportCourseData") {
+    const exportFn = resolveFn("exportScrapedCourseData");
+    if (exportFn) {
+      exportFn(request.format || "markdown");
+      sendResponse({ success: true });
+    } else {
+      sendResponse({ success: false, error: "exportScrapedCourseData not found" });
+    }
+    return true;
+  }
+
   // ── Quiz Auto-Pilot ──
   if (request.action === "processPage") {
     if (!document.querySelector("app-root")) return false;

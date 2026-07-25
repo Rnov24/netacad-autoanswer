@@ -34,9 +34,29 @@ function getProviderConfig() {
   });
 }
 
-function buildSinglePrompt(question, answers) {
+/**
+ * Infer the course subject from the browser page title.
+ * Returns a short string used in the system prompt to orient the AI.
+ */
+function inferCourseSubject() {
+  try {
+    if (typeof document === "undefined") return "Cisco networking";
+    const title = (document.title || "").toLowerCase();
+    if (title.includes("python") || title.includes("pcap") || title.includes("pcep")) return "Python programming";
+    if (title.includes("cyber") || title.includes("security") || title.includes("ensa")) return "Cisco cybersecurity / ENSA";
+    if (title.includes("devnet") || title.includes("devasc")) return "Cisco DevNet / network automation";
+    if (title.includes("linux") || title.includes("ndg")) return "Linux / NDG";
+    if (title.includes("itn") || title.includes("ccna")) return "Cisco CCNA networking";
+    if (title.includes("srwe") || title.includes("ensa")) return "Cisco networking and security";
+  } catch (_) {}
+  return "Cisco networking";
+}
+
+function buildSinglePrompt(question, answers, questionType = null) {
   const isMatching = question.toLowerCase().includes("matching question") || question.toLowerCase().includes("order");
-  return `You are a Cisco CCNA networking expert. Analyze the question type and determine the correct answer.
+  const inferredType = isMatching ? "OBJECT_MATCHING" : (questionType || "MCQ_SINGLE");
+  const subject = inferCourseSubject();
+  return `You are an expert in ${subject}. Analyze the question type and determine the correct answer.
 
 Question:
 ${question}
@@ -45,20 +65,24 @@ Options / Available items:
 ${answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}
 
 INSTRUCTIONS:
-1. Analyze and classify the question type into "type":
-   - "MCQ_SINGLE" (single choice multiple-choice question)
-   - "MCQ_MULTIPLE" (multiple select question)
+1. The DOM-detected question input type is: "${inferredType}". Use this as a strong hint.
+   Confirm or adjust based on question wording. Valid types:
+   - "MCQ_SINGLE" (radio buttons — exactly one correct answer)
+   - "MCQ_MULTIPLE" (checkboxes — one or more correct answers; select ALL that apply)
    - "OBJECT_MATCHING" (matching/connecting category circles A, B, C... to option items)
    - "FILL_IN_BLANK" (text input question)
 
 2. Determine the correct answer(s) into "answer":
-   - For MCQ_SINGLE: exact option text.
-   - For MCQ_MULTIPLE: exact option texts separated by ' /// '.
-   - For OBJECT_MATCHING: 'A: <exact text> /// B: <exact text> /// C: <exact text>'. Use exact text from options list without paraphrasing.
+   - For MCQ_SINGLE: exact option text of the single correct answer.
+   - For MCQ_MULTIPLE: ALL correct option texts, each separated by ' /// '.
+   - For OBJECT_MATCHING: 'A: <exact text> /// B: <exact text> /// C: <exact text>'. Use exact text from options list.
+   - For FILL_IN_BLANK: the answer text to type.
+   - For questions involving numbers, IP addresses, subnet masks, or technical notation: return the EXACT string as shown in the option list, including all digits, dots, slashes, and units. Do NOT paraphrase or round.
+   - For code snippet / math questions: carefully check return types (list vs tuple) and operators (e.g. x**x exponentiation vs x*x multiplication).
 
 3. Output your answer in structured JSON format with keys "type" and "answer":
 {
-  "type": "${isMatching ? "OBJECT_MATCHING" : "MCQ_SINGLE"}",
+  "type": "${inferredType}",
   "answer": "exact answer string"
 }
 Return ONLY valid JSON.`;
@@ -68,14 +92,16 @@ function buildBatchPrompt(questionsWithAnswers) {
   const formattedQuestions = questionsWithAnswers
     .map((q, idx) => {
       const isMatching = q.question.toLowerCase().includes("matching question") || q.question.toLowerCase().includes("order");
-      return `[QUESTION ${idx + 1}] ${isMatching ? "(TYPE: OBJECT_MATCHING)" : ""}
+      const typeHint = isMatching ? "OBJECT_MATCHING" : (q.questionType || "MCQ_SINGLE");
+      return `[QUESTION ${idx + 1}] (DOM-DETECTED TYPE: ${typeHint})
 ${q.question}
 Options / Items:
 ${q.answers.map((a, i) => `${i + 1}. ${a}`).join("\n")}`;
     })
     .join("\n\n");
 
-  return `You are a Cisco CCNA networking expert answering quiz questions.
+  const subject = inferCourseSubject();
+  return `You are an expert in ${subject} answering quiz questions.
 
 For each question below:
 1. Analyze the question type ("MCQ_SINGLE", "MCQ_MULTIPLE", "OBJECT_MATCHING", or "FILL_IN_BLANK").
@@ -84,22 +110,12 @@ For each question below:
 ${formattedQuestions}
 
 CRITICAL INSTRUCTIONS:
-- Return a JSON object containing key "results" with an array of objects for each question in exact order:
-{
-  "results": [
-    {
-      "type": "MCQ_SINGLE",
-      "answer": "answer for question 1"
-    },
-    {
-      "type": "OBJECT_MATCHING",
-      "answer": "A: text /// B: text"
-    }
-  ]
-}
-- For normal MCQ: return exact option text as rendered in the options list (or the exact letter "A", "B", "C", "D" if options are single letters). Do NOT add artificial prefix numbers (like "4. "). If multiple apply, separate with ' /// '.
+- The "DOM-DETECTED TYPE" in each question header is a strong hint based on checkbox vs radio DOM analysis. Honor it unless question wording clearly contradicts it.
+- For MCQ_SINGLE: return one exact option text.
+- For MCQ_MULTIPLE: return ALL correct options separated by ' /// '. Select every answer that applies — do NOT limit to one.
+- For OBJECT_MATCHING: output ALL pairs: 'A: <exact option text> /// B: <exact option text>'.
+- For questions involving numbers, IP addresses, subnet masks, or technical notation: return the EXACT string as shown in the option list, including all digits, dots, slashes, and units. Do NOT paraphrase or round.
 - For code snippet / math questions: carefully check return types (list vs tuple) and operators (e.g. x**x exponentiation vs x*x multiplication).
-- For OBJECT_MATCHING: output ALL pairs on one line: 'A: <exact option text> /// B: <exact option text>'. Use exact text from items list.
 - Return ONLY valid JSON object with no extra text outside JSON.`;
 }
 
@@ -360,8 +376,15 @@ async function queryAiProvider(prompt, overrideApiKey = null, useJsonMode = fals
 function cleanOptionPrefix(str) {
   if (!str || typeof str !== "string") return str;
   const trimmed = str.trim();
+  // Preserve object-matching pairs like "A: text" — never strip
   if (/^[A-Z]:\s+/i.test(trimmed)) return trimmed;
-  return trimmed.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
+  // Only strip numbered list prefixes (1–2 digit number followed by ). or ]. or ): or -  then space)
+  // NOT values like "128 bits", "10.0.0.1" etc.
+  return trimmed
+    .replace(/^\d{1,2}[\.\)\:\-]\s+/, "")  // "1. " "99) " etc — at most 2 digits
+    .replace(/^[a-zA-Z][\.\)\:\-]\s+/, "") // "A. " "b) " etc — single letter
+    .replace(/^[\-\*]\s+/, "")             // "- " "* " bullet points
+    .trim();
 }
 
 async function getAiAnswer(questionText, answerTexts, overrideApiKey = null) {

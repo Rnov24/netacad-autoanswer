@@ -357,6 +357,35 @@ function processAnswerElements(answerElements, index) {
   return answerTexts;
 }
 
+/**
+ * Infer the question input type from the MCQ DOM element.
+ * Returns "MCQ_MULTIPLE" if checkboxes are found, "MCQ_SINGLE" otherwise.
+ */
+function detectMcqInputType(mcqViewElement) {
+  if (!mcqViewElement) return "MCQ_SINGLE";
+  try {
+    const sr = mcqViewElement.shadowRoot;
+    const baseView = sr ? sr.querySelector('base-view[type="component"]') : null;
+    const searchRoots = [
+      sr,
+      baseView && baseView.shadowRoot ? baseView.shadowRoot : null,
+    ].filter(Boolean);
+
+    for (const root of searchRoots) {
+      const checkboxes = root.querySelectorAll(
+        "mat-checkbox, input[type='checkbox']"
+      );
+      if (checkboxes.length > 0) return "MCQ_MULTIPLE";
+      const radios = root.querySelectorAll(
+        "mat-radio-button, input[type='radio']"
+      );
+      if (radios.length > 0) return "MCQ_SINGLE";
+    }
+  } catch (_) {}
+  return "MCQ_SINGLE";
+}
+
+
 function dispatchFullClickSequence(targetElement) {
   if (!targetElement) return;
   try {
@@ -783,9 +812,15 @@ function navigateToNextSubModule() {
 function cleanOptionTextForMatch(text) {
   if (!text || typeof text !== "string") return "";
   let clean = text.trim();
-  // Strip AI prefixes like "AI Suggestion:", "AI Suggestions:", "Answer:"
+  // Strip AI panel prefixes
   clean = clean.replace(/^(?:ai\s*suggestions?:?|suggested\s*answers?:?|answers?:?)\s*/i, "").trim();
-  const stripped = clean.replace(/^(?:[0-9]+|[a-zA-Z])[\.\)\:\-]\s*/, "").replace(/^[\-\*]\s*/, "").trim();
+  // Strip list-item prefixes (1–2 digit number OR single letter, followed by separator + space)
+  // Deliberately NOT matching 3+ digit numbers like "128" or IPs like "10.0.0.1"
+  const stripped = clean
+    .replace(/^\d{1,2}[\.\)\:\-]\s+/, "")
+    .replace(/^[a-zA-Z][\.\)\:\-]\s+/, "")
+    .replace(/^[\-\*]\s+/, "")
+    .trim();
   const result = (stripped.length > 0 ? stripped : clean).toLowerCase();
   return result;
 }
@@ -891,6 +926,25 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
       return { index, node, labelEl, rawText, cleanText, alphaText, inputEl };
     });
 
+    // Determine if this is a multi-select (checkbox) question
+    const isMultiSelect = parsedCandidates.some((c) => {
+      const tag = (c.inputEl && c.inputEl.tagName || "").toLowerCase();
+      return tag === "mat-checkbox" || (c.inputEl && c.inputEl.type === "checkbox");
+    });
+
+    // For multi-select: deselect ALL currently-selected options before re-selecting
+    // This clears stale prior selections so only AI-chosen options end up checked
+    if (isMultiSelect) {
+      parsedCandidates.forEach((cand) => {
+        if (cand.inputEl && cand.inputEl.checked) {
+          dispatchFullClickSequence(cand.inputEl);
+          cand.inputEl.checked = false;
+          cand.inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+          cand.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      });
+    }
+
     targetAnswers.forEach((targetAns, tIdx) => {
       if (!targetAns) return;
 
@@ -909,10 +963,17 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         } else if (/^\d+$/.test(targetAns) && (cand.cleanText === targetAns || candRawLower.includes(targetAns))) {
           score = 90;
         } else {
-          if (targetAlpha.length >= 2 && cand.alphaText.includes(targetAlpha)) {
+          if (targetAlpha.length >= 4 && cand.alphaText.includes(targetAlpha)) {
+            // target is a substring of candidate — strong signal
             score = 85;
-          } else if (cand.alphaText.length >= 2 && targetAlpha.includes(cand.alphaText)) {
-            score = 80;
+          } else if (
+            cand.alphaText.length >= 6 &&
+            targetAlpha.length >= 6 &&
+            cand.alphaText.length >= Math.floor(targetAlpha.length * 0.4) &&
+            targetAlpha.includes(cand.alphaText)
+          ) {
+            // candidate text is a substantial portion of target — moderate signal
+            score = 78;
           }
         }
 
@@ -924,7 +985,7 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
 
       // Tier 3: Positional Number & Letter Fallback (ONLY if option controls have no text or no text match was found)
       const hasAnyOptionText = parsedCandidates.some((c) => c.alphaText.length > 0);
-      if (!bestMatch || highestScore < 70) {
+      if (!bestMatch || highestScore < 78) {
         if (/^[1-9]\d*$/.test(targetAns) && !hasAnyOptionText) {
           const numIdx = parseInt(targetAns, 10) - 1;
           if (numIdx >= 0 && numIdx < parsedCandidates.length) {
@@ -942,9 +1003,9 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         }
       }
 
-      // No Tier 4 Direct Index Fallback — if confidence score is low (<70), do NOT click a random option!
+      // No Tier 4 Direct Index Fallback — if confidence score is low (<78), do NOT click a random option!
 
-      if (bestMatch && highestScore >= 70) {
+      if (bestMatch && highestScore >= 78) {
         console.debug(`NetAcad UI: Auto-selecting option "${bestMatch.rawText}" for target "${targetAns}" (Score: ${highestScore})`);
 
         if (bestMatch.inputEl) {
@@ -953,6 +1014,16 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
             bestMatch.inputEl.checked = true;
             bestMatch.inputEl.dispatchEvent(new Event("change", { bubbles: true }));
             bestMatch.inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+
+          // For single-select: uncheck any other option that is currently checked
+          if (bestMatch.inputEl.type === "radio" || bestMatch.inputEl.tagName.toLowerCase() === "mat-radio-button") {
+            parsedCandidates.forEach((other) => {
+              if (other !== bestMatch && other.inputEl && other.inputEl.checked) {
+                other.inputEl.checked = false;
+                other.inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            });
           }
         } else {
           dispatchFullClickSequence(bestMatch.node);
@@ -1147,9 +1218,46 @@ function clickQuestionTabByIndex(targetIndex) {
 
 function clickNextQuestionButton() {
   try {
-    const roots = [document, ...getShadowRoots(document)];
-    for (const root of roots) {
-      const buttons = Array.from(root.querySelectorAll("button, a, input[type='button'], .button, mat-button"));
+    // Prefer next buttons that live inside the quiz component shadow DOM
+    // to avoid accidentally clicking the course-level "Next Module" link.
+    const quizRoots = [];
+    try {
+      const appRoot = document.querySelector("app-root");
+      if (appRoot && appRoot.shadowRoot) {
+        const pageView = appRoot.shadowRoot.querySelector("page-view");
+        if (pageView && pageView.shadowRoot) {
+          pageView.shadowRoot.querySelectorAll("article-view").forEach((av) => {
+            if (av.shadowRoot) quizRoots.push(av.shadowRoot);
+            av.shadowRoot && av.shadowRoot.querySelectorAll("block-view").forEach((bv) => {
+              if (bv.shadowRoot) quizRoots.push(bv.shadowRoot);
+              bv.shadowRoot && bv.shadowRoot.querySelectorAll("mcq-view, object-matching-view").forEach((mqv) => {
+                if (mqv.shadowRoot) quizRoots.push(mqv.shadowRoot);
+                const base = mqv.shadowRoot.querySelector('base-view[type="component"]');
+                if (base && base.shadowRoot) quizRoots.push(base.shadowRoot);
+              });
+            });
+          });
+        }
+      }
+    } catch (_) {}
+
+    // Also search document-level as fallback (keeps existing behaviour for edge cases)
+    const allRoots = quizRoots.length > 0
+      ? [...quizRoots, document, ...getShadowRoots(document)]
+      : [document, ...getShadowRoots(document)];
+
+    // De-duplicate roots
+    const seenRoots = new Set();
+    const dedupedRoots = allRoots.filter((r) => {
+      if (seenRoots.has(r)) return false;
+      seenRoots.add(r);
+      return true;
+    });
+
+    for (const root of dedupedRoots) {
+      const buttons = Array.from(root.querySelectorAll(
+        "button, a, input[type='button'], .button, mat-button"
+      ));
       const nextBtn = buttons.find((b) => {
         const text = (b.innerText || b.value || b.getAttribute("aria-label") || b.getAttribute("title") || "").trim().toLowerCase();
         return (
@@ -1360,6 +1468,7 @@ const exportsList = {
   extractQuestionAndAnswers,
   extractMatchingQuestion,
   processAnswerElements,
+  detectMcqInputType,
   dispatchFullClickSequence,
   findExactMatchingElements,
   processMatchingPairsSequentially,

@@ -157,6 +157,8 @@ async function scrapeData(currentAttempt = 1) {
                     if (mcqView) mcqViewElements.push(mcqView);
                     const omv = blockView.shadowRoot.querySelector("object-matching-view");
                     if (omv) mcqViewElements.push(omv);
+                    const fbv = blockView.shadowRoot.querySelector("fill-blank-view");
+                    if (fbv) mcqViewElements.push(fbv);
                   }
                 });
               }
@@ -204,7 +206,9 @@ async function scrapeData(currentAttempt = 1) {
     // --- Extract question data ---
     const allQuestionsData = [];
     for (const [index, mcqViewElement] of mcqViewElements.entries()) {
-      const isMatching = mcqViewElement.tagName?.toLowerCase() === "object-matching-view";
+      const tagName = (mcqViewElement.tagName || "").toLowerCase();
+      const isMatching = tagName === "object-matching-view";
+      const isFillBlank = tagName === "fill-blank-view";
 
       if (isMatching) {
         if (!extractMatchingQuestionFn) {
@@ -230,6 +234,27 @@ ${m.options.map((o) => `  - ${o.text}`).join("\n")}`;
         continue;
       }
 
+      // Fill-in-the-blank: extract question text and treat answers as empty (AI provides the fill text)
+      if (isFillBlank) {
+        if (!extractQuestionAndAnswersFn) {
+          await processSingleQuestionFn(mcqViewElement, index, apiKey, "Error: extraction functions missing.");
+          continue;
+        }
+        const extracted = extractQuestionAndAnswersFn(mcqViewElement, index);
+        if (extracted.questionText && !extracted.questionText.startsWith("Error")) {
+          allQuestionsData.push({
+            question: extracted.questionText,
+            answers: [],   // fill-blank has no multiple-choice options
+            questionType: "FILL_IN_BLANK",
+            mcqViewElement,
+            originalIndex: index,
+          });
+        } else {
+          await processSingleQuestionFn(mcqViewElement, index, apiKey, extracted.questionText);
+        }
+        continue;
+      }
+
       if (!extractQuestionAndAnswersFn || !processAnswerElementsFn) {
         await processSingleQuestionFn(mcqViewElement, index, apiKey, "Error: extraction functions missing.");
         continue;
@@ -237,11 +262,14 @@ ${m.options.map((o) => `  - ${o.text}`).join("\n")}`;
 
       const extracted = extractQuestionAndAnswersFn(mcqViewElement, index);
       const answerTexts = processAnswerElementsFn(extracted.answerElements, index);
+      const detectTypeFn = resolveFn("detectMcqInputType") || (typeof detectMcqInputType === "function" ? detectMcqInputType : null);
+      const questionType = detectTypeFn ? detectTypeFn(mcqViewElement) : "MCQ_SINGLE";
 
       if (extracted.questionText && !extracted.questionText.startsWith("Error") && answerTexts.length > 0) {
         allQuestionsData.push({
           question: extracted.questionText,
           answers: answerTexts,
+          questionType,   // "MCQ_SINGLE" | "MCQ_MULTIPLE"
           mcqViewElement,
           originalIndex: index,
         });
@@ -268,7 +296,11 @@ ${m.options.map((o) => `  - ${o.text}`).join("\n")}`;
       await processSingleQuestionFn(qd.mcqViewElement, qd.originalIndex, apiKey, "BATCH_PROCESSING_STARTED");
     }
 
-    const questionsForPrompt = allQuestionsData.map((q) => ({ question: q.question, answers: q.answers }));
+    const questionsForPrompt = allQuestionsData.map((q) => ({
+      question: q.question,
+      answers: q.answers,
+      questionType: q.questionType || "MCQ_SINGLE",
+    }));
     const batchApiResponse = getAiAnswersForBatchFn
       ? await getAiAnswersForBatchFn(questionsForPrompt, apiKey)
       : { error: "getAiAnswersForBatch function not found" };
@@ -293,9 +325,60 @@ ${m.options.map((o) => `  - ${o.text}`).join("\n")}`;
   }
 }
 
-// ─────────────────────────────────────────────
-// FUNCTION 2: QUIZ AUTO-PILOT LOOP
-// ─────────────────────────────────────────────
+/**
+ * Poll until a new mcq-view or object-matching-view appears whose question text
+ * differs from `previousQuestionSnippet`, or until the final submit page appears,
+ * or until `timeoutMs` elapses.
+ *
+ * Returns "new_question" | "final_submit" | "timeout".
+ */
+async function waitForNextQuestionOrFinalPage(previousQuestionSnippet, timeoutMs = 4000) {
+  const step = 150;
+  let elapsed = 0;
+  const detectFinalFn = resolveFn("detectFinalSubmitPage");
+  const detectResultFn = resolveFn("detectQuizResultPage");
+
+  while (elapsed < timeoutMs) {
+    if (!isAutonomousRunning) return "stopped";
+
+    // Check for result page or final submit page
+    if (detectResultFn && detectResultFn()) return "quiz_result";
+    if (detectFinalFn && detectFinalFn()) return "final_submit";
+
+    // Look for any mcq-view with a different question text
+    try {
+      const appRoot = document.querySelector("app-root");
+      if (appRoot && appRoot.shadowRoot) {
+        const pageView = appRoot.shadowRoot.querySelector("page-view");
+        if (pageView && pageView.shadowRoot) {
+          const articleViews = pageView.shadowRoot.querySelectorAll("article-view");
+          for (const av of articleViews) {
+            if (!av.shadowRoot) continue;
+            for (const bv of av.shadowRoot.querySelectorAll("block-view")) {
+              if (!bv.shadowRoot) continue;
+              const mcq = bv.shadowRoot.querySelector("mcq-view, object-matching-view");
+              if (!mcq || !mcq.shadowRoot) continue;
+              // Check that this question text looks different from what we just answered
+              const questionEl = mcq.shadowRoot.querySelector(
+                "div.component__body-inner.mcq__body-inner, div.component__body, .mcq__prompt, .prompt"
+              );
+              const currentSnippet = (questionEl ? questionEl.innerText : "").trim().slice(0, 80);
+              if (currentSnippet && currentSnippet !== previousQuestionSnippet) {
+                return "new_question";
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    await new Promise((r) => setTimeout(r, step));
+    elapsed += step;
+  }
+
+  return "timeout";
+}
+
 // ─────────────────────────────────────────────
 // FUNCTION 2: EFFICIENT QUIZ AUTO-PILOT LOOP
 // ─────────────────────────────────────────────
@@ -320,8 +403,15 @@ async function runAutonomousLoop() {
 
       console.debug(`NetAcad AutoAnswer: Quiz step #${loopIteration + 1}`);
 
+      const detectResultFn = resolveFn("detectQuizResultPage");
       const detectFn = resolveFn("detectFinalSubmitPage");
       const confirmFn = resolveFn("confirmAndSubmitFinalAssessment");
+
+      // 0. Check if quiz is already completed and displaying the score/result page
+      if (detectResultFn && detectResultFn()) {
+        console.log("NetAcad Auto-Pilot: Quiz Result Page detected — quiz completed! 🎉");
+        break;
+      }
 
       // 1. Check for final submit page immediately
       if (detectFn && detectFn()) {
@@ -330,32 +420,67 @@ async function runAutonomousLoop() {
         break;
       }
 
-      // 2. Answer current question (scrapeData auto-selects and auto-submits synchronously)
+      // Capture current question snippet for DOM-readiness check later
+      let currentQuestionSnippet = "";
+      try {
+        const appRoot = document.querySelector("app-root");
+        if (appRoot && appRoot.shadowRoot) {
+          const pageView = appRoot.shadowRoot.querySelector("page-view");
+          if (pageView && pageView.shadowRoot) {
+            const firstMcq = pageView.shadowRoot.querySelector("article-view");
+            if (firstMcq && firstMcq.shadowRoot) {
+              const firstBv = firstMcq.shadowRoot.querySelector("block-view");
+              if (firstBv && firstBv.shadowRoot) {
+                const mcq = firstBv.shadowRoot.querySelector("mcq-view, object-matching-view");
+                if (mcq && mcq.shadowRoot) {
+                  const qEl = mcq.shadowRoot.querySelector(
+                    "div.component__body-inner.mcq__body-inner, div.component__body, .mcq__prompt, .prompt"
+                  );
+                  currentQuestionSnippet = (qEl ? qEl.innerText : "").trim().slice(0, 80);
+                }
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. Answer current question
       await scrapeData();
-      await waitMs(300);
+      await waitMs(200);  // brief settled-state wait after auto-select + submit
 
       if (!isAutonomousRunning) break;
 
-      // 3. Re-verify submit page
+      // 3. Re-verify result or submit page
+      if (detectResultFn && detectResultFn()) {
+        console.log("NetAcad Auto-Pilot: Quiz Result Page detected — quiz completed! 🎉");
+        break;
+      }
       if (detectFn && detectFn()) {
         if (confirmFn) confirmFn();
         break;
       }
 
-      // 4. Click Next Question Navigation Button immediately
+      // 4. Click Next Question Navigation Button
       loopIteration++;
       const nextBtnFn = resolveFn("clickNextQuestionButton") || resolveFn("clickNextQuestionTab");
       let moved = nextBtnFn ? nextBtnFn() : false;
 
       if (!moved) {
+        if (detectResultFn && detectResultFn()) break;
         if (detectFn && detectFn()) {
           if (confirmFn) confirmFn();
           break;
         }
-        await waitMs(500);
+        // Nothing to click — poll briefly before retrying
+        const readiness = await waitForNextQuestionOrFinalPage(currentQuestionSnippet, 2000);
+        if (readiness === "quiz_result") break;
+        if (readiness === "final_submit" && confirmFn) { confirmFn(); break; }
       } else {
-        // Wait for next question view to render in DOM
-        await waitMs(650);
+        // Clicked Next — wait until new question DOM appears (up to 4s)
+        const readiness = await waitForNextQuestionOrFinalPage(currentQuestionSnippet, 4000);
+        if (readiness === "quiz_result") break;
+        if (readiness === "final_submit" && confirmFn) { confirmFn(); break; }
+        // readiness === "timeout" is fine — scrapeData will retry on its own
       }
     }
   } finally {

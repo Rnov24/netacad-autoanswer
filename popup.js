@@ -12,10 +12,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const stopBtn          = document.getElementById("stopBtn");
   const statusDiv        = document.getElementById("status");
 
-  const autoSelectToggle      = document.getElementById("autoSelectToggle");
-  const autoSubmitToggle      = document.getElementById("autoSubmitToggle");
-  const showAnswersToggle     = document.getElementById("showAnswersToggle");
-  const processOnSwitchToggle = document.getElementById("processOnSwitchToggle");
+  const autoSelectToggle        = document.getElementById("autoSelectToggle");
+  const autoSubmitToggle        = document.getElementById("autoSubmitToggle");
+  const showAnswersToggle       = document.getElementById("showAnswersToggle");
+  const processOnSwitchToggle   = document.getElementById("processOnSwitchToggle");
+  const useDecisionModelToggle  = document.getElementById("useDecisionModelToggle");
 
   const MODEL_PRESETS = {
     gemini: [
@@ -44,6 +45,8 @@ document.addEventListener("DOMContentLoaded", () => {
       { value: "claude-opus-4-8",          label: "claude-opus-4.8" },
     ],
     openrouter: [
+      { value: "inception/mercury-decide:free",      label: "mercury-decide:free (Decision Model ⚡)" },
+      { value: "inception/mercury-decide",           label: "mercury-decide (Decision Model)" },
       { value: "google/gemini-2.5-flash",           label: "gemini-2.5-flash (default)" },
       { value: "openai/gpt-4o-mini",                label: "gpt-4o-mini" },
       { value: "anthropic/claude-3.7-sonnet",       label: "claude-3.7-sonnet" },
@@ -106,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "anthropicApiKey", "anthropicModel",
     "openrouterApiKey", "openrouterModel",
     "autoSelect", "autoSubmit", "showAnswers", "processOnSwitch",
+    "useDecisionModelForMcq",
   ];
 
   chrome.storage.sync.get(KEYS, (res) => {
@@ -113,10 +117,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (res.aiProvider) providerSelect.value = res.aiProvider;
     updateProviderUI(providerSelect.value);
 
-    autoSelectToggle.checked      = res.autoSelect      !== false;
-    autoSubmitToggle.checked      = res.autoSubmit      === true;
-    showAnswersToggle.checked     = res.showAnswers     !== false;
-    processOnSwitchToggle.checked = res.processOnSwitch !== false;
+    autoSelectToggle.checked       = res.autoSelect             !== false;
+    autoSubmitToggle.checked       = res.autoSubmit             === true;
+    showAnswersToggle.checked      = res.showAnswers            !== false;
+    processOnSwitchToggle.checked  = res.processOnSwitch        !== false;
+    if (useDecisionModelToggle) {
+      useDecisionModelToggle.checked = res.useDecisionModelForMcq === true;
+    }
   });
 
   providerSelect.addEventListener("change", () => updateProviderUI(providerSelect.value));
@@ -134,6 +141,10 @@ document.addEventListener("DOMContentLoaded", () => {
   autoSelectToggle.addEventListener("change",      () => chrome.storage.sync.set({ autoSelect: autoSelectToggle.checked }));
   autoSubmitToggle.addEventListener("change",      () => chrome.storage.sync.set({ autoSubmit: autoSubmitToggle.checked }));
   showAnswersToggle.addEventListener("change",     () => chrome.storage.sync.set({ showAnswers: showAnswersToggle.checked }));
+  processOnSwitchToggle.addEventListener("change", () => chrome.storage.sync.set({ processOnSwitch: processOnSwitchToggle.checked }));
+  if (useDecisionModelToggle) {
+    useDecisionModelToggle.addEventListener("change", () => chrome.storage.sync.set({ useDecisionModelForMcq: useDecisionModelToggle.checked }));
+  }
   function pollTabStatus() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs.length || !tabs[0].id) return;
@@ -223,10 +234,14 @@ document.addEventListener("DOMContentLoaded", () => {
       autoSubmit: autoSubmitToggle.checked,
       showAnswers: showAnswersToggle.checked,
       processOnSwitch: processOnSwitchToggle.checked,
+      useDecisionModelForMcq: useDecisionModelToggle ? useDecisionModelToggle.checked : false,
     };
 
     storage[`${provider}ApiKey`] = apiKey;
     storage[`${provider}Model`]  = model;
+    if (useDecisionModelToggle) {
+      storage.useDecisionModelForMcq = useDecisionModelToggle.checked;
+    }
 
     chrome.storage.sync.set(saveObj, () => setStatus("Settings saved ✓", "#34d399"));
   });

@@ -65,6 +65,13 @@ function createAiAssistantUI(uiContainerId, index) {
     fontSize: "13px",
   });
 
+  const headerRight = document.createElement("div");
+  Object.assign(headerRight.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  });
+
   const badge = document.createElement("span");
   badge.className = "ai-status-badge";
   badge.textContent = "Analyzing...";
@@ -77,8 +84,24 @@ function createAiAssistantUI(uiContainerId, index) {
     border: "1px solid rgba(56, 189, 248, 0.3)",
   });
 
+  const toggleBtn = document.createElement("button");
+  toggleBtn.className = "ai-toggle-btn";
+  toggleBtn.textContent = "▼";
+  toggleBtn.title = "Collapse / Expand AI Panel";
+  Object.assign(toggleBtn.style, {
+    background: "none",
+    border: "none",
+    color: "#94a3b8",
+    cursor: "pointer",
+    fontSize: "12px",
+    padding: "0 4px",
+    lineHeight: "1",
+  });
+
+  headerRight.appendChild(badge);
+  headerRight.appendChild(toggleBtn);
   headerDiv.appendChild(titleElement);
-  headerDiv.appendChild(badge);
+  headerDiv.appendChild(headerRight);
   uiContainer.appendChild(headerDiv);
 
   const runningBanner = document.createElement("div");
@@ -98,6 +121,8 @@ function createAiAssistantUI(uiContainerId, index) {
     lineHeight: "1.5",
     wordBreak: "break-word",
     color: "#e2e8f0",
+    maxHeight: "160px",
+    overflowY: "auto",
   });
   aiAnswerDisplay.textContent = "Initializing...";
   uiContainer.appendChild(aiAnswerDisplay);
@@ -107,6 +132,15 @@ function createAiAssistantUI(uiContainerId, index) {
     display: "flex",
     gap: "8px",
     marginTop: "10px",
+  });
+
+  let isCollapsed = false;
+  toggleBtn.addEventListener("click", () => {
+    isCollapsed = !isCollapsed;
+    aiAnswerDisplay.style.display = isCollapsed ? "none" : "block";
+    btnRow.style.display = isCollapsed ? "none" : "flex";
+    toggleBtn.textContent = isCollapsed ? "▲" : "▼";
+    uiContainer.style.marginBottom = isCollapsed ? "4px" : "12px";
   });
 
   const refreshButton = document.createElement("button");
@@ -235,14 +269,32 @@ function extractQuestionAndAnswers(mcqViewElement, index) {
       if (questionTextElement) {
         promptText = questionTextElement.innerText.trim();
       } else {
-        const potentialElements = Array.from(root.querySelectorAll("div, p, span"));
-        for (const el of potentialElements) {
-          const text = el.innerText.trim();
-          if (text.length > 20) {
-            promptText = text;
-            questionTextElement = el;
-            break;
+        // Tighter fallback: search only elements with semantic content classes,
+        // excluding option/button/nav elements that are not the question prompt.
+        const FALLBACK_SELECTORS = [
+          ".component__body-inner",
+          ".component__body",
+          ".mcq__body",
+          "[class*='prompt']",
+          "[class*='question']",
+          "[class*='body']",
+          "p",
+        ];
+        const EXCLUDE_CLOSEST = ".mcq__item, .component__option, .objectMatching-option-item, button, nav, header, aside, .netacad-ai-assistant-ui";
+
+        for (const sel of FALLBACK_SELECTORS) {
+          const candidates = Array.from(root.querySelectorAll(sel));
+          for (const el of candidates) {
+            // Skip if inside an option, button, nav, or our own AI panel
+            if (typeof el.closest === "function" && el.closest(EXCLUDE_CLOSEST)) continue;
+            const text = (el.innerText || "").trim();
+            if (text.length > 25 && text.length < 2000) {
+              promptText = text;
+              questionTextElement = el;
+              break;
+            }
           }
+          if (promptText) break;
         }
       }
 
@@ -266,6 +318,7 @@ function extractQuestionAndAnswers(mcqViewElement, index) {
     console.error(`NetAcad UI: Error extracting Q&A for question ${index + 1}:`, e);
     questionText = `Error extracting data. Check console.`;
   }
+  console.debug(`NetAcad UI: Q${index + 1} extracted — "${questionText.slice(0, 60).replace(/\n/g, " ")}..." | ${answerElements.length} answer elements`);
   return { questionText, answerElements, questionTextElement };
 }
 
@@ -878,14 +931,14 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
     let optionNodes = [];
     searchRoots.forEach((root) => {
       const interactiveInputs = Array.from(
-        root.querySelectorAll("mat-radio-button, mat-checkbox, input[type='radio'], input[type='checkbox']")
+        root.querySelectorAll("mat-radio-button, mat-checkbox, input[type='radio'], input[type='checkbox'], mat-button-toggle, [role='radio'], [role='checkbox'], mat-option")
       );
       if (interactiveInputs.length > 0) {
         optionNodes.push(...interactiveInputs);
       }
     });
 
-    // Fallback to generic option containers ONLY if no mat-radio-button / mat-checkbox elements were found
+    // Fallback to generic option containers ONLY if no interactive input elements were found
     if (optionNodes.length === 0) {
       searchRoots.forEach((root) => {
         const nodes = Array.from(
@@ -901,17 +954,24 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
 
     // Build candidate list with labels and inputs
     const parsedCandidates = uniqueNodes.map((node, index) => {
+      // Look for specific label elements inside node (excluding generic 'span' which matches empty icon elements first)
       let labelEl = node.querySelector(
-        ".mcq__item-label, .mat-radio-label, .mat-checkbox-label, .component__option-label, label, code, span"
+        ".mcq__item-label, .mat-radio-label-content, .mat-radio-label, .mat-checkbox-label, .mdc-label, .component__option-label, [class*='label-content'], [class*='option-label'], [class*='item-label'], label"
       );
       let rawText = labelEl ? (labelEl.innerText || labelEl.textContent || "").trim() : "";
 
-      // If text inside host control is empty, search parent container element
+      // If specific label element returned nothing, check node's direct innerText (the single option's text)
+      if (!rawText) {
+        rawText = (node.innerText || node.textContent || "").trim();
+        if (rawText) labelEl = node;
+      }
+
+      // ONLY if node's own innerText is completely empty, search closest container
       if (!rawText) {
         const container =
           (typeof node.closest === "function"
             ? node.closest(".mcq__item, .component__option, .mcq__option, [class*='option'], [class*='item'], li, tr")
-            : null) || node.parentElement || node;
+            : null) || node;
         rawText = (container.innerText || container.textContent || "").trim();
         if (!labelEl) labelEl = container;
       }
@@ -963,17 +1023,15 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
         } else if (/^\d+$/.test(targetAns) && (cand.cleanText === targetAns || candRawLower.includes(targetAns))) {
           score = 90;
         } else {
-          if (targetAlpha.length >= 4 && cand.alphaText.includes(targetAlpha)) {
-            // target is a substring of candidate — strong signal
-            score = 85;
-          } else if (
-            cand.alphaText.length >= 6 &&
-            targetAlpha.length >= 6 &&
-            cand.alphaText.length >= Math.floor(targetAlpha.length * 0.4) &&
-            targetAlpha.includes(cand.alphaText)
-          ) {
-            // candidate text is a substantial portion of target — moderate signal
-            score = 78;
+          // Substring / Acronym / Containing Match
+          if (targetAlpha.length >= 2 && cand.alphaText.length >= 2) {
+            if (cand.alphaText.includes(targetAlpha)) {
+              // Option text in DOM contains target answer (e.g. target="true" inside option="True")
+              score = 85;
+            } else if (targetAlpha.includes(cand.alphaText)) {
+              // Target answer contains option text in DOM (e.g. target="internet engineering task force (ietf)", option="IETF" or option="Internet Engineering Task Force")
+              score = 85;
+            }
           }
         }
 
@@ -1115,6 +1173,23 @@ function autoSubmitCurrentQuestion() {
   return autoSubmitQuestion(null);
 }
 
+function detectQuizResultPage() {
+  const roots = [document, ...getShadowRoots(document)];
+  for (const root of roots) {
+    const text = (root.innerText || root.textContent || "").toLowerCase();
+    if (
+      text.includes("you have scored") ||
+      text.includes("congratulations, you have passed") ||
+      text.includes("passed the exam") ||
+      text.includes("exam results") ||
+      (text.includes("result page") && (text.includes("reset") || text.includes("scored") || text.includes("congratulations")))
+    ) {
+      return root;
+    }
+  }
+  return null;
+}
+
 function detectFinalSubmitPage() {
   const roots = [document, ...getShadowRoots(document)];
   for (const root of roots) {
@@ -1218,6 +1293,12 @@ function clickQuestionTabByIndex(targetIndex) {
 
 function clickNextQuestionButton() {
   try {
+    // If already on the result/score page, do NOT click next to avoid spawning duplicate Result Page tabs!
+    if (typeof detectQuizResultPage === "function" && detectQuizResultPage()) {
+      console.log("NetAcad UI: Currently on Quiz Result Page — skipping Next button click.");
+      return false;
+    }
+
     // Prefer next buttons that live inside the quiz component shadow DOM
     // to avoid accidentally clicking the course-level "Next Module" link.
     const quizRoots = [];
@@ -1296,6 +1377,31 @@ function updateUiAndLogsPostExtraction(aiAnswerDisplay, questionText, answerText
   }
 }
 
+function fixContainerScrollAndOverflow(startElement) {
+  if (!startElement) return;
+  let curr = startElement;
+  let depth = 0;
+  while (curr && curr !== document.body && depth < 12) {
+    try {
+      if (curr instanceof HTMLElement || (curr.style && typeof curr.style === "object")) {
+        // Clear fixed max-height that clips options
+        curr.style.maxHeight = "none";
+        const comp = window.getComputedStyle ? window.getComputedStyle(curr) : null;
+        if (comp) {
+          if (comp.overflowY === "hidden" || comp.overflow === "hidden") {
+            curr.style.overflowY = "auto";
+          }
+          if (comp.maxHeight && comp.maxHeight !== "none") {
+            curr.style.maxHeight = "none";
+          }
+        }
+      }
+    } catch (_) {}
+    curr = curr.parentElement || (curr.getRootNode ? curr.getRootNode().host : null);
+    depth++;
+  }
+}
+
 function injectUi(uiContainer, questionTextElement, mcqViewElement, uiContainerId, index) {
   let uiInjected = false;
   if (questionTextElement && questionTextElement.parentNode) {
@@ -1315,6 +1421,22 @@ function injectUi(uiContainer, questionTextElement, mcqViewElement, uiContainerI
     mcqViewElement.shadowRoot.appendChild(uiContainer);
     uiInjected = true;
   }
+
+  // Ensure parent containers & option wrappers never clip options or block scrolling
+  if (uiInjected) {
+    fixContainerScrollAndOverflow(uiContainer);
+    if (mcqViewElement) {
+      fixContainerScrollAndOverflow(mcqViewElement);
+      if (mcqViewElement.shadowRoot) {
+        const optionEls = mcqViewElement.shadowRoot.querySelectorAll(
+          ".component__options, .mcq__options, [class*='options'], [class*='body']"
+        );
+        optionEls.forEach((el) => fixContainerScrollAndOverflow(el));
+      }
+    }
+    if (questionTextElement) fixContainerScrollAndOverflow(questionTextElement);
+  }
+
   return uiInjected;
 }
 
@@ -1332,7 +1454,9 @@ async function handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDi
   badge.style.borderColor = "rgba(245, 158, 11, 0.3)";
 
   const fetchFn = typeof getAiAnswer === "function" ? getAiAnswer : (window.getAiAnswer || globalThis.getAiAnswer);
-  const rawAiResponse = await fetchFn(questionText, answerTexts, apiKey);
+  const detectTypeFn = typeof detectMcqInputType === "function" ? detectMcqInputType : (window.detectMcqInputType || globalThis.detectMcqInputType);
+  const qType = detectTypeFn && mcqViewElement ? detectTypeFn(mcqViewElement) : null;
+  const rawAiResponse = await fetchFn(questionText, answerTexts, apiKey, qType);
 
   if (rawAiResponse && !rawAiResponse.toLowerCase().startsWith("error:")) {
     badge.textContent = "Ready";
@@ -1485,6 +1609,7 @@ const exportsList = {
   autoSubmitQuestion,
   autoSubmitCurrentQuestion,
   detectFinalSubmitPage,
+  detectQuizResultPage,
   confirmAndSubmitFinalAssessment,
   clickQuestionTabByIndex,
   clickNextQuestionButton,

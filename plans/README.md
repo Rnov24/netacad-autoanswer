@@ -21,6 +21,10 @@ honor its STOP conditions, and update the Status column when done.
 | [009](./009-fix-scroll-timing-aria-toc-logging.md) | Fix scroll timing, scope aria-expanded expansion to ToC sidebar, suppress ToC log spam | P1 | S | 008 | DONE |
 | [010](./010-course-scroller-pause-and-resilience.md) | Add pause/resume support and per-section error resilience to Course Scroller | P1 | S | — | DONE |
 | [011](./011-scroller-multi-question-and-progress.md) | Handle multi-question CYU pages and add scroller progress reporting | P2 | M | 008, 010 | DONE |
+| [012](./012-question-type-detection-and-multi-select-accuracy.md) | Reliable question-type detection and correct multi-select auto-clicking | P1 | M | — | DONE |
+| [013](./013-quiz-navigation-dom-readiness.md) | Harden quiz navigation — wait for DOM readiness before proceeding | P1 | M | — | DONE |
+| [014](./014-answer-accuracy-and-option-matching.md) | Improve answer accuracy with richer context and stricter answer-matching | P1 | M | 012 | DONE |
+| [015](./015-scraping-robustness-fill-blank.md) | Robust question text scraping and fill-blank-view discovery | P2 | M | — | DONE |
 
 Status values: `TODO` | `IN PROGRESS` | `DONE` | `BLOCKED (reason)` | `REJECTED (reason)`
 

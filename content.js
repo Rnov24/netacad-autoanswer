@@ -1,24 +1,15 @@
-// Add pulse animations and status banner styles to page head
+// Add running button and status banner styles to page head
 const statusStyleEl = document.createElement("style");
 statusStyleEl.textContent = `
-  @keyframes netacad-pulse-glow {
-    0% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); transform: scale(1); }
-    50% { box-shadow: 0 0 22px rgba(16, 185, 129, 1); transform: scale(1.04); }
-    100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.6); transform: scale(1); }
-  }
-  @keyframes netacad-dot-blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
   .netacad-running-btn {
-    animation: netacad-pulse-glow 2s infinite ease-in-out !important;
-    background-color: #059669 !important;
-    border-color: #34d399 !important;
+    background-color: #177245 !important;
+    border: 1px solid rgba(255, 255, 255, 0.35) !important;
+    box-shadow: 0 2px 6px rgba(7, 28, 51, 0.18), 0 12px 28px rgba(7, 28, 51, 0.22) !important;
     min-width: 165px !important;
     width: auto !important;
     height: 42px !important;
     padding: 0 16px !important;
-    border-radius: 24px !important;
+    border-radius: 999px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -26,34 +17,66 @@ statusStyleEl.textContent = `
     font-size: 12px !important;
     font-weight: 700 !important;
     letter-spacing: 0.5px !important;
+    color: #ffffff !important;
   }
   .netacad-running-dot {
     width: 9px;
     height: 9px;
-    background-color: #34d399;
+    background-color: #ffffff;
     border-radius: 50%;
     display: inline-block;
-    animation: netacad-dot-blink 1.2s infinite ease-in-out;
   }
   .ai-running-banner {
-    background: linear-gradient(135deg, #065f46 0%, #047857 100%);
-    color: #ecfdf5;
+    background: #e7f4ec;
+    color: #1a1a1a;
     padding: 8px 12px;
-    border-radius: 6px;
+    border-radius: 10px;
     margin-bottom: 10px;
     font-size: 12px;
     font-weight: 600;
     display: flex;
     align-items: center;
     gap: 8px;
-    border: 1px solid #10b981;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+    border: 1px solid #bfe3cd;
+  }
+  .ai-running-banner .netacad-running-dot {
+    background-color: #166534;
+  }
+  @keyframes netacad-panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .netacad-ai-assistant-ui {
+    animation: netacad-panel-in 180ms ease-out;
+  }
+  @keyframes netacad-badge-settle {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+  }
+  .ai-badge-settle {
+    animation: netacad-badge-settle 200ms ease-in-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .netacad-ai-assistant-ui {
+      animation: none !important;
+    }
+    .ai-badge-settle {
+      animation: none !important;
+    }
   }
 `;
 if (document.head) document.head.appendChild(statusStyleEl);
 else document.addEventListener("DOMContentLoaded", () => document.head.appendChild(statusStyleEl));
 
 const FLOATING_BTN_ID = "netacad-ai-floating-process-btn";
+const FLOATING_BTN_IDLE_HTML = `<span style="position:relative;display:inline-flex;align-items:center;justify-content:center;line-height:1;font-size:13px;font-weight:750;letter-spacing:-0.01em;">AI<span style="position:absolute;top:-4px;right:-7px;width:7px;height:7px;border-radius:50%;background-color:#12a5d9;display:inline-block;pointer-events:none;"></span></span>`;
 
 function injectFloatingButton() {
   if (window.top !== window) return; // top frame only
@@ -66,8 +89,9 @@ function injectFloatingButton() {
   const btn = document.createElement("button");
   btn.id = FLOATING_BTN_ID;
   btn.type = "button";
-  btn.textContent = "AI";
+  btn.innerHTML = FLOATING_BTN_IDLE_HTML;
   btn.title = "Click to run Auto-Solve Quiz";
+  btn.setAttribute("aria-label", "Run Auto-Solve Quiz");
   Object.assign(btn.style, {
     position: "fixed",
     right: "24px",
@@ -75,20 +99,23 @@ function injectFloatingButton() {
     left: "auto",
     top: "auto",
     zIndex: "2147483647",
-    width: "42px",
-    height: "42px",
+    width: "46px",
+    height: "46px",
     padding: "0",
-    fontSize: "14px",
-    fontWeight: "700",
+    fontSize: "13px",
+    fontWeight: "750",
     color: "#ffffff",
-    backgroundColor: "#2563eb",
-    border: "2px solid rgba(255, 255, 255, 0.3)",
-    borderRadius: "50%",
-    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
+    backgroundColor: "#071c33",
+    border: "1px solid rgba(255, 255, 255, 0.35)",
+    borderRadius: "999px",
+    boxShadow: "0 2px 6px rgba(7, 28, 51, 0.18), 0 12px 28px rgba(7, 28, 51, 0.22)",
     cursor: "grab",
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    transition: "background-color 0.15s, transform 0.15s, box-shadow 0.15s",
-    lineHeight: "38px",
+    transition: "background-color 0.15s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    lineHeight: "1",
     textAlign: "center",
     userSelect: "none",
     touchAction: "none",
@@ -96,14 +123,12 @@ function injectFloatingButton() {
 
   btn.addEventListener("mouseover", () => {
     if (!btn.classList.contains("netacad-running-btn")) {
-      btn.style.backgroundColor = "#1d4ed8";
-      btn.style.transform = "scale(1.08)";
+      btn.style.backgroundColor = "#0a294d";
     }
   });
   btn.addEventListener("mouseout", () => {
     if (!btn.classList.contains("netacad-running-btn")) {
-      btn.style.backgroundColor = "#2563eb";
-      btn.style.transform = "scale(1)";
+      btn.style.backgroundColor = "#071c33";
     }
   });
 
@@ -113,8 +138,8 @@ function injectFloatingButton() {
   let suppressNextClick = false;
 
   function clampToViewport(x, y) {
-    const w = btn.offsetWidth || 42;
-    const h = btn.offsetHeight || 42;
+    const w = btn.offsetWidth || 46;
+    const h = btn.offsetHeight || 46;
     const maxX = Math.max(0, window.innerWidth - w);
     const maxY = Math.max(0, window.innerHeight - h);
     return [Math.min(Math.max(0, x), maxX), Math.min(Math.max(0, y), maxY)];
@@ -196,16 +221,15 @@ function injectFloatingButton() {
       return;
     }
 
-    const original = btn.textContent;
     btn.disabled = true;
-    btn.textContent = "⚡";
+    btn.textContent = "...";
 
     chrome.runtime.sendMessage({ action: "broadcastProcessPage" }, () => {
       if (chrome.runtime.lastError) {
         console.debug("NetAcad Scraper: broadcast error", chrome.runtime.lastError.message);
-        btn.textContent = "✗";
+        btn.textContent = "!";
       } else {
-        btn.textContent = "✓";
+        btn.textContent = "AI";
       }
       setTimeout(() => {
         btn.disabled = false;
@@ -227,25 +251,32 @@ function updateFloatingButtonState() {
   if (btn) {
     if (isAutoRunning) {
       if (isPaused) {
-        btn.className = "";
-        btn.innerHTML = `<span class="netacad-running-dot" style="background-color:#fbbf24"></span> ⏸ PAUSED`;
-        btn.style.backgroundColor = "#d97706";
+        btn.className = "netacad-running-btn";
+        btn.innerHTML = `<span class="netacad-running-dot"></span> PAUSED`;
+        btn.style.setProperty("background-color", "#92400e", "important");
       } else {
         btn.className = "netacad-running-btn";
-        btn.innerHTML = `<span class="netacad-running-dot"></span> ⚡ AUTO-PILOT RUNNING...`;
+        btn.innerHTML = `<span class="netacad-running-dot"></span> AUTO-PILOT RUNNING...`;
+        btn.style.setProperty("background-color", "#177245", "important");
       }
     } else if (isScrollRunning) {
       btn.className = "netacad-running-btn";
-      btn.innerHTML = `<span class="netacad-running-dot"></span> 📜 SCROLLER RUNNING...`;
+      btn.innerHTML = `<span class="netacad-running-dot"></span> SCROLLER RUNNING...`;
+      btn.style.setProperty("background-color", "#177245", "important");
     } else {
       btn.className = "";
-      btn.innerHTML = "AI";
-      btn.style.backgroundColor = "#2563eb";
-      btn.style.width = "42px";
-      btn.style.height = "42px";
+      btn.innerHTML = FLOATING_BTN_IDLE_HTML;
+      btn.style.backgroundColor = "#071c33";
+      btn.style.border = "1px solid rgba(255, 255, 255, 0.35)";
+      btn.style.width = "46px";
+      btn.style.minWidth = "";
+      btn.style.height = "46px";
       btn.style.padding = "0";
-      btn.style.borderRadius = "50%";
-      btn.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.4)";
+      btn.style.borderRadius = "999px";
+      btn.style.boxShadow = "0 2px 6px rgba(7, 28, 51, 0.18), 0 12px 28px rgba(7, 28, 51, 0.22)";
+      btn.style.display = "flex";
+      btn.style.alignItems = "center";
+      btn.style.justifyContent = "center";
     }
   }
 
@@ -256,12 +287,12 @@ function updateFloatingButtonState() {
       banner.style.display = "flex";
       let bannerText;
       if (isAutoRunning) {
-        bannerText = "⚡ Quiz Auto-Pilot is Running... Please do not switch or close this tab!";
+        bannerText = "Quiz Auto-Pilot is Running... Please do not switch or close this tab!";
       } else {
         const cur = window.scrollerCurrentSection || globalThis.scrollerCurrentSection || 0;
         const tot = window.scrollerTotalSections  || globalThis.scrollerTotalSections  || 0;
         const progressStr = (cur > 0 && tot > 0) ? ` (${cur}/${tot})` : "";
-        bannerText = `📜 Course Scroller is Running${progressStr}... Please do not switch or close this tab!`;
+        bannerText = `Course Scroller is Running${progressStr}... Please do not switch or close this tab!`;
       }
       banner.innerHTML = `<span class="netacad-running-dot"></span> ${bannerText}`;
     } else {

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "NetAcad Scraper",
+  "name": "NetAcad AI Assistant",
   "version": "2.0",
   "description": "Scrapes questions and answers from NetAcad and uses AI to suggest and auto-fill answers.",
   "permissions": [

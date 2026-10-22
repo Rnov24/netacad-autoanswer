@@ -2,6 +2,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const providerSelect   = document.getElementById("aiProvider");
   const apiKeyLabel      = document.getElementById("apiKeyLabel");
   const apiKeyInput      = document.getElementById("apiKey");
+  const mercuryApiKeyInput = document.getElementById("mercuryApiKey");
   const modelSelect      = document.getElementById("modelSelect");
   const customModelGroup = document.getElementById("customModelGroup");
   const customModelInput = document.getElementById("customModelInput");
@@ -45,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
       { value: "claude-opus-4-8",          label: "claude-opus-4.8" },
     ],
     openrouter: [
-      { value: "inception/mercury-decide:free",      label: "mercury-decide:free (Decision Model ⚡)" },
+      { value: "inception/mercury-decide:free",      label: "mercury-decide:free (Decision Model)" },
       { value: "inception/mercury-decide",           label: "mercury-decide (Decision Model)" },
       { value: "google/gemini-2.5-flash",           label: "gemini-2.5-flash (default)" },
       { value: "openai/gpt-4o-mini",                label: "gpt-4o-mini" },
@@ -78,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const customOpt = document.createElement("option");
     customOpt.value = "custom";
-    customOpt.textContent = "✨ Custom Model (Type manually)";
+    customOpt.textContent = "Custom model (type manually)";
     modelSelect.appendChild(customOpt);
 
     const saved = storage[`${provider}Model`];
@@ -108,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
     "openaiApiKey", "openaiModel",
     "anthropicApiKey", "anthropicModel",
     "openrouterApiKey", "openrouterModel",
+    "mercuryApiKey",
     "autoSelect", "autoSubmit", "showAnswers", "processOnSwitch",
     "useDecisionModelForMcq",
   ];
@@ -116,6 +118,10 @@ document.addEventListener("DOMContentLoaded", () => {
     storage = res || {};
     if (res.aiProvider) providerSelect.value = res.aiProvider;
     updateProviderUI(providerSelect.value);
+
+    if (mercuryApiKeyInput) {
+      mercuryApiKeyInput.value = res.mercuryApiKey || "";
+    }
 
     autoSelectToggle.checked       = res.autoSelect             !== false;
     autoSubmitToggle.checked       = res.autoSubmit             === true;
@@ -145,6 +151,22 @@ document.addEventListener("DOMContentLoaded", () => {
   if (useDecisionModelToggle) {
     useDecisionModelToggle.addEventListener("change", () => chrome.storage.sync.set({ useDecisionModelForMcq: useDecisionModelToggle.checked }));
   }
+
+  // Persist Mercury API key immediately on change
+  if (mercuryApiKeyInput) {
+    mercuryApiKeyInput.addEventListener("change", () => {
+      const val = mercuryApiKeyInput.value.trim();
+      storage.mercuryApiKey = val;
+      chrome.storage.sync.set({ mercuryApiKey: val }, () => {
+        if (val) {
+          setStatus("Mercury API key saved.", "#177245");
+        } else {
+          setStatus("Mercury API key cleared.", "#52677d");
+        }
+      });
+    });
+  }
+
   function pollTabStatus() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs.length || !tabs[0].id) return;
@@ -157,22 +179,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (res.isAutoRunning) {
           if (res.isPaused) {
-            textEl.textContent = "Auto-Pilot Paused ⏸";
-            badgeEl.style.color = "#fbbf24";
-            dotEl.style.background = "#fbbf24";
+            textEl.textContent = "Auto-Pilot Paused";
+            if (badgeEl) badgeEl.style.color = "#92400e";
+            dotEl.style.background = "#92400e";
           } else {
-            textEl.textContent = "Auto-Pilot Active ⚡";
-            badgeEl.style.color = "#34d399";
-            dotEl.style.background = "#34d399";
+            textEl.textContent = "Auto-Pilot Active";
+            if (badgeEl) badgeEl.style.color = "#177245";
+            dotEl.style.background = "#177245";
           }
         } else if (res.isScrollRunning) {
-          textEl.textContent = "Course Scroller Active 📜";
-          badgeEl.style.color = "#38bdf8";
-          dotEl.style.background = "#38bdf8";
+          textEl.textContent = "Course Scroller Active";
+          if (badgeEl) badgeEl.style.color = "#177245";
+          dotEl.style.background = "#177245";
         } else {
-          textEl.textContent = "Ready ⚪";
-          badgeEl.style.color = "#94a3b8";
-          dotEl.style.background = "#94a3b8";
+          textEl.textContent = "Ready";
+          if (badgeEl) badgeEl.style.color = "#b9cce0";
+          dotEl.style.background = "#52677d";
         }
       });
     });
@@ -183,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Status helpers ──
   let statusTimer;
-  function setStatus(msg, color = "#38bdf8", duration = 3500) {
+  function setStatus(msg, color = "#52677d", duration = 3500) {
     clearTimeout(statusTimer);
     statusDiv.style.color = color;
     statusDiv.textContent = msg;
@@ -194,12 +216,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function sendToTab(msg, onResponse) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (!tabs.length || !tabs[0].id) {
-        setStatus("Error: Active tab not found.", "#f87171");
+        setStatus("No active tab found. Open a NetAcad page and try again.", "#8f1d14");
         return;
       }
       chrome.tabs.sendMessage(tabs[0].id, msg, (res) => {
         if (chrome.runtime.lastError) {
-          setStatus(`Error: ${chrome.runtime.lastError.message}`, "#f87171");
+          setStatus(`Could not reach the NetAcad tab. Reload the page and try again. (${chrome.runtime.lastError.message})`, "#8f1d14");
         } else if (onResponse) {
           onResponse(res);
         }
@@ -209,27 +231,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Save Settings ──
   saveBtn.addEventListener("click", () => {
-    const provider = providerSelect.value;
-    const apiKey   = apiKeyInput.value.trim();
-    let model      = modelSelect.value;
+    const provider   = providerSelect.value;
+    const apiKey     = apiKeyInput.value.trim();
+    const mercuryKey = mercuryApiKeyInput ? mercuryApiKeyInput.value.trim() : "";
+    let model        = modelSelect.value;
 
-    if (model === "custom") {
-      model = customModelInput.value.trim();
-      if (!model) {
-        setStatus("Please enter a custom model name.", "#f87171", 3000);
-        return;
+    if (apiKey) {
+      if (model === "custom") {
+        model = customModelInput.value.trim();
+        if (!model) {
+          setStatus("Please enter a custom model name.", "#8f1d14", 3000);
+          return;
+        }
       }
     }
 
-    if (!apiKey) {
-      setStatus(`Please enter a ${PROVIDER_LABELS[provider]} API key.`, "#f87171", 3000);
+    if (!apiKey && !mercuryKey) {
+      setStatus(`Please enter a ${PROVIDER_LABELS[provider]} API key.`, "#8f1d14", 3000);
       return;
     }
 
     const saveObj = {
-      aiProvider: provider,
-      [`${provider}ApiKey`]: apiKey,
-      [`${provider}Model`]: model,
+      mercuryApiKey: mercuryKey,
       autoSelect: autoSelectToggle.checked,
       autoSubmit: autoSubmitToggle.checked,
       showAnswers: showAnswersToggle.checked,
@@ -237,30 +260,46 @@ document.addEventListener("DOMContentLoaded", () => {
       useDecisionModelForMcq: useDecisionModelToggle ? useDecisionModelToggle.checked : false,
     };
 
-    storage[`${provider}ApiKey`] = apiKey;
-    storage[`${provider}Model`]  = model;
+    if (apiKey) {
+      saveObj.aiProvider = provider;
+      saveObj[`${provider}ApiKey`] = apiKey;
+      saveObj[`${provider}Model`] = model;
+      storage[`${provider}ApiKey`] = apiKey;
+      storage[`${provider}Model`]  = model;
+    }
+
+    storage.mercuryApiKey = mercuryKey;
     if (useDecisionModelToggle) {
       storage.useDecisionModelForMcq = useDecisionModelToggle.checked;
     }
 
-    chrome.storage.sync.set(saveObj, () => setStatus("Settings saved ✓", "#34d399"));
+    chrome.storage.sync.set(saveObj, () => {
+      const successMsg = (!apiKey && mercuryKey) ? "Mercury API key saved." : "Settings saved.";
+      setStatus(successMsg, "#177245");
+      saveBtn.style.backgroundColor = "#e7f4ec";
+      saveBtn.style.color = "#166534";
+      setTimeout(() => {
+        saveBtn.style.backgroundColor = "";
+        saveBtn.style.color = "";
+      }, 1200);
+    });
   });
 
   // ── Auto-Solve Quiz ──
   processPageBtn.addEventListener("click", () => {
-    setStatus("Starting Quiz Auto-Pilot...", "#38bdf8", 0);
+    setStatus("Starting Quiz Auto-Pilot...", "#52677d", 0);
     sendToTab({ action: "processPage", showAnswers: showAnswersToggle.checked }, (res) => {
-      if (res?.success) setStatus("Quiz Auto-Pilot running 🚀", "#34d399");
-      else setStatus(res?.error || "Could not start Quiz Auto-Pilot.", "#f87171");
+      if (res?.success) setStatus("Quiz Auto-Pilot running", "#177245");
+      else setStatus(res?.error || "Could not start Quiz Auto-Pilot.", "#8f1d14");
     });
   });
 
   // ── Auto-Scroll & Complete Module ──
   autoScrollBtn.addEventListener("click", () => {
-    setStatus("Starting Course Scroller...", "#a855f7", 0);
+    setStatus("Starting Course Scroller...", "#52677d", 0);
     sendToTab({ action: "runCourseScroller" }, (res) => {
-      if (res?.success) setStatus("Course Scroller running 📜", "#a855f7");
-      else setStatus(res?.error || "Could not start Course Scroller.", "#f87171");
+      if (res?.success) setStatus("Course Scroller running", "#177245");
+      else setStatus(res?.error || "Could not start Course Scroller.", "#8f1d14");
     });
   });
 
@@ -268,13 +307,13 @@ document.addEventListener("DOMContentLoaded", () => {
   pauseBtn.addEventListener("click", () => {
     sendToTab({ action: "toggleAutoPilotPause" }, (res) => {
       if (res?.isPaused) {
-        pauseBtn.textContent = "Resume ▶️";
-        pauseBtn.style.background = "#059669";
-        setStatus("Paused ⏸️", "#f59e0b");
-      } else {
-        pauseBtn.textContent = "Pause ⏸️";
+        pauseBtn.textContent = "Resume";
         pauseBtn.style.background = "";
-        setStatus("Resumed ▶️", "#34d399");
+        setStatus("Paused", "#92400e");
+      } else {
+        pauseBtn.textContent = "Pause";
+        pauseBtn.style.background = "";
+        setStatus("Resumed", "#177245");
       }
     });
   });
@@ -282,9 +321,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Stop ──
   stopBtn.addEventListener("click", () => {
     sendToTab({ action: "stopAutoPilot" }, () => {
-      pauseBtn.textContent = "Pause ⏸️";
+      pauseBtn.textContent = "Pause";
       pauseBtn.style.background = "";
-      setStatus("Stopped ⏹️", "#f87171");
+      setStatus("Stopped", "#8f1d14");
     });
   });
 
@@ -294,14 +333,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (exportMdBtn) {
     exportMdBtn.addEventListener("click", () => {
-      setStatus("Exporting Markdown data...", "#0d9488", 2000);
+      setStatus("Exporting Markdown data...", "#52677d", 2000);
       sendToTab({ action: "exportCourseData", format: "markdown" });
     });
   }
 
   if (exportJsonBtn) {
     exportJsonBtn.addEventListener("click", () => {
-      setStatus("Exporting JSON data...", "#6366f1", 2000);
+      setStatus("Exporting JSON data...", "#52677d", 2000);
       sendToTab({ action: "exportCourseData", format: "json" });
     });
   }

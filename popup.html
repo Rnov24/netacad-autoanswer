@@ -2,181 +2,834 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>NetAcad AI Assistant</title>
+  <title>NetAcad Assistant</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --card: #1e293b;
-      --border: #334155;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --blue: #2563eb;
-      --blue-h: #1d4ed8;
-      --cyan: #38bdf8;
-      --green: #10b981;
-      --purple: #8b5cf6;
-      --purple-h: #7c3aed;
-      --amber: #d97706;
-      --red: #dc2626;
+      --canvas: #eef3f7;
+      --surface: #ffffff;
+      --ink: #10243e;
+      --muted: #52677d;
+      --hairline: #d8e1e9;
+      --navy: #071c33;
+      --mercury-navy: #0a294d;
+      --navy-muted: #b9cce0;
+      --accent: #12a5d9;
+      --action: #0875a6;
+      --action-hover: #065e87;
+      --action-active: #054e70;
+      --success: #177245;
+      --warning: #92400e;
+      --error: #8f1d14;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
 
-    body { width: 340px; padding: 16px; background: var(--bg); color: var(--text); }
+    ::selection {
+      background: #cdeefb;
+      color: #071c33;
+    }
 
+    body {
+      width: 340px;
+      margin: 0;
+      padding: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      line-height: 1.45;
+      font-size: 13px;
+      scrollbar-width: thin;
+      scrollbar-color: #c9c9c7 transparent;
+      caret-color: var(--action);
+    }
+
+    body::-webkit-scrollbar {
+      width: 6px;
+    }
+    body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    body::-webkit-scrollbar-thumb {
+      background: #c9c9c7;
+      border-radius: 3px;
+    }
+
+    /* ── Full-bleed Header ── */
     .header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
-    }
-    .header h3 { font-size: 16px; font-weight: 700; color: var(--cyan); }
-    .badge {
-      font-size: 10px; padding: 2px 6px; border-radius: 99px;
-      background: rgba(56,189,248,.15); color: var(--cyan); border: 1px solid rgba(56,189,248,.3);
+      position: relative;
+      background: var(--navy);
+      color: #ffffff;
+      padding: 16px 16px 12px 16px;
+      overflow: hidden;
     }
 
-    .form-group { margin-bottom: 10px; }
-    label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-
-    input[type="password"], input[type="text"], select {
-      width: 100%; padding: 7px 10px; font-size: 13px;
-      background: var(--card); color: var(--text);
-      border: 1px solid var(--border); border-radius: 6px; outline: none;
-      transition: border-color .15s;
-    }
-    input[type="password"]:focus, input[type="text"]:focus, select:focus { border-color: var(--cyan); }
-
-    .card {
-      background: rgba(30,41,59,.5); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px; margin-bottom: 10px;
+    .header-top {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
-    .toggle-label { font-size: 12px; color: var(--text); }
+    .brand-tile {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--mercury-navy);
+      border: 1px solid rgba(18, 165, 217, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
 
-    .switch { position: relative; display: inline-block; width: 34px; height: 18px; }
-    .switch input { opacity: 0; width: 0; height: 0; }
+    .header-titles {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .header-titles h1 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #ffffff;
+      line-height: 1.2;
+    }
+
+    .header-titles p {
+      font-size: 12px;
+      color: var(--navy-muted);
+      margin-top: 1px;
+      line-height: 1.3;
+    }
+
+    .version-badge {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--navy-muted);
+      border: 1px solid #31567f;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(10, 41, 77, 0.6);
+      flex-shrink: 0;
+    }
+
+    .header-circuit {
+      position: absolute;
+      right: 0;
+      top: 0;
+      height: 100%;
+      width: 120px;
+      pointer-events: none;
+      opacity: 0.18;
+    }
+
+    .header-status-row {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(216, 225, 233, 0.12);
+      font-size: 12px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--navy-muted);
+      font-weight: 500;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #6b7280;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .shortcut-text {
+      font-size: 12px;
+      font-family: monospace, -apple-system, sans-serif;
+      color: var(--navy-muted);
+      opacity: 0.9;
+    }
+
+    /* ── Main Canvas Content ── */
+    .content-area {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* ── White Surface Card ── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 1px 2px rgba(7, 28, 51, 0.05), 0 10px 24px rgba(7, 28, 51, 0.05);
+    }
+
+    .panel-header-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .icon-tile {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: var(--canvas);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 650;
+      color: var(--ink);
+    }
+
+    /* ── Form Controls ── */
+    .form-group {
+      margin-bottom: 10px;
+    }
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    select {
+      width: 100%;
+      height: 38px;
+      padding: 0 12px;
+      font-size: 13px;
+      background: #f8fafc;
+      color: var(--ink);
+      border: 1px solid #cbd6e2;
+      border-radius: 10px;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+
+    input[type="password"]:focus,
+    input[type="text"]:focus,
+    select:focus {
+      border-color: var(--action);
+    }
+
+    input:focus-visible,
+    select:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--action);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 3px rgba(8, 117, 166, 0.16);
+    }
+
+    /* ── Mercury Decide Navy Panel ── */
+    .mercury-panel {
+      background: var(--mercury-navy);
+      border: 1px solid #1a3f6a;
+      border-radius: 14px;
+      padding: 14px;
+      color: #ffffff;
+      box-shadow: 0 1px 2px rgba(7, 28, 51, 0.05), 0 10px 24px rgba(7, 28, 51, 0.05);
+    }
+
+    .mercury-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .mercury-brand-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .mercury-bolt-tile {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .mercury-titles {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mercury-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.25;
+    }
+
+    .mercury-caption {
+      font-size: 12px;
+      color: var(--navy-muted);
+      font-family: monospace, -apple-system, sans-serif;
+      white-space: nowrap;
+    }
+
+    .mercury-caption-row {
+      margin-top: 6px;
+      padding-left: 38px;
+    }
+
+    .mercury-field-area {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(216, 225, 233, 0.12);
+    }
+
+    .mercury-field-area label {
+      color: var(--navy-muted);
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    .mercury-input {
+      background: #102f55 !important;
+      border: 1px solid #31567f !important;
+      color: #ffffff !important;
+      caret-color: var(--accent) !important;
+    }
+
+    .mercury-input::placeholder {
+      color: #9db4cb;
+    }
+
+    .mercury-input:focus {
+      border-color: var(--accent) !important;
+    }
+
+    .mercury-input:focus-visible {
+      outline: 2px solid var(--accent) !important;
+      box-shadow: 0 0 0 3px rgba(18, 165, 217, 0.25) !important;
+    }
+
+    .mercury-helper {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--navy-muted);
+      margin-top: 6px;
+    }
+
+    /* ── Automation Dividers & Toggles ── */
+    .automation-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .automation-row:first-of-type {
+      padding-top: 0;
+    }
+    .automation-row:last-of-type {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .automation-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .automation-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--canvas);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .automation-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .automation-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.25;
+    }
+
+    .automation-desc {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+      margin-top: 1px;
+    }
+
+    /* ── Proper Round Switches ── */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
     .slider {
-      position: absolute; cursor: pointer; inset: 0;
-      background: #475569; transition: .2s; border-radius: 18px;
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: var(--hairline);
+      transition: background-color .2s;
+      border-radius: 999px;
     }
+
     .slider:before {
-      position: absolute; content: ""; height: 14px; width: 14px;
-      left: 2px; bottom: 2px; background: white; transition: .2s; border-radius: 50%;
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background: #ffffff;
+      transition: transform .2s;
+      border-radius: 999px;
+      box-shadow: 0 1px 3px rgba(7, 28, 51, 0.2);
     }
-    input:checked + .slider { background: var(--blue); }
-    input:checked + .slider:before { transform: translateX(16px); }
 
-    .btn-group { display: flex; flex-direction: column; gap: 7px; margin-bottom: 8px; }
-    .btn-row { display: flex; gap: 7px; }
+    input:checked + .slider {
+      background: var(--action);
+    }
 
+    input:checked + .slider:before {
+      transform: translateX(16px);
+    }
+
+    .switch input:focus-visible + .slider {
+      outline: 2px solid var(--action);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 3px rgba(8, 117, 166, 0.16);
+    }
+
+    /* ── Action Buttons ── */
     .btn {
-      flex: 1; padding: 9px; font-size: 12px; font-weight: 700;
-      border: none; border-radius: 6px; cursor: pointer;
-      transition: filter .15s, transform .1s; text-align: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      transition: background-color .15s, border-color .15s, color .15s, transform .05s;
     }
-    .btn:hover { filter: brightness(1.12); transform: translateY(-1px); }
-    .btn:active { filter: brightness(.95); transform: translateY(0); }
+    .btn:active {
+      transform: scale(0.99);
+    }
 
-    .btn-quiz  { background: var(--blue);   color: #fff; }
-    .btn-scroll{ background: var(--purple); color: #fff; }
-    .btn-pause { background: var(--amber);  color: #fff; flex: 0 0 auto; width: 90px; }
-    .btn-stop  { background: var(--red);    color: #fff; flex: 0 0 auto; width: 68px; }
-    .btn-save  { background: var(--card);   color: var(--muted); border: 1px solid var(--border); }
+    .btn-navy {
+      height: 38px;
+      background: var(--navy);
+      color: #ffffff;
+      border: 1px solid #10243e;
+    }
+    .btn-navy:hover {
+      background: #0a294d;
+    }
+
+    .run-area {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      height: 44px;
+      background: var(--action);
+      color: #ffffff;
+      border: 1px solid var(--action);
+      font-size: 13px;
+      box-shadow: 0 1px 2px rgba(7, 28, 51, 0.08);
+    }
+    .btn-primary:hover {
+      background: var(--action-hover);
+      border-color: var(--action-hover);
+    }
+    .btn-primary:active {
+      background: var(--action-active);
+      border-color: var(--action-active);
+    }
+
+    .btn-secondary {
+      height: 40px;
+      background: #ffffff;
+      color: var(--ink);
+      border: 1px solid var(--hairline);
+    }
+    .btn-secondary:hover {
+      background: #f8fafc;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-control {
+      height: 36px;
+      flex: 1;
+    }
+
+    .btn-stop {
+      color: var(--error);
+    }
+    .btn-stop:hover {
+      background: #fdecea;
+      border-color: #f5c6c0;
+    }
+
+    .btn-ghost-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-ghost {
+      height: 34px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--hairline);
+      font-size: 12px;
+      flex: 1;
+    }
+    .btn-ghost:hover {
+      background: #ffffff;
+      color: var(--ink);
+      border-color: #cbd6e2;
+    }
 
     #status {
-      margin-top: 8px; text-align: center; font-size: 12px;
-      min-height: 16px; color: var(--cyan); transition: color .2s;
+      min-height: 18px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-top: 2px;
+      line-height: 1.4;
     }
 
-    .hint { margin-top: 8px; text-align: center; font-size: 11px; color: var(--muted); }
-    .hint b { color: var(--text); }
+    @media (prefers-reduced-motion: reduce) {
+      .slider, .slider:before, .btn, input, select {
+        transition: none !important;
+      }
+      .btn:active {
+        transform: none !important;
+      }
+    }
   </style>
 </head>
 <body>
+  <!-- 1. Full-bleed Navy Header -->
   <div class="header">
-    <h3>NetAcad AI <span class="badge">v2.0</span></h3>
-  </div>
+    <div class="header-top">
+      <div class="brand-tile">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="6" cy="12" r="2.5" stroke="#12a5d9" fill="#0a294d" />
+          <circle cx="18" cy="6" r="2.5" stroke="#ffffff" fill="#0a294d" />
+          <circle cx="18" cy="18" r="2.5" stroke="#12a5d9" fill="#0a294d" />
+          <circle cx="12" cy="12" r="2" stroke="#ffffff" fill="#ffffff" />
+          <line x1="8.5" y1="12" x2="10" y2="12" stroke="#ffffff" />
+          <line x1="13.5" y1="10.5" x2="16" y2="7.5" stroke="#12a5d9" />
+          <line x1="13.5" y1="13.5" x2="16" y2="16.5" stroke="#ffffff" />
+        </svg>
+      </div>
+      <div class="header-titles">
+        <h1>NetAcad Assistant</h1>
+        <p>Quiz and module automation</p>
+      </div>
+      <span class="version-badge">v2.0</span>
+    </div>
 
-  <div class="card" style="padding: 8px 12px; margin-bottom: 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid #334155;">
-    <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600;">
-      <span style="color: #94a3b8;">Status:</span>
-      <span id="popupStatusBadge" style="color: #94a3b8; display: flex; align-items: center; gap: 6px;">
-        <span id="popupStatusDot" style="width: 7px; height: 7px; background: #94a3b8; border-radius: 50%; display: inline-block;"></span>
-        <span id="popupStatusText">Ready ⚪</span>
-      </span>
-    </div>
-  </div>
+    <svg class="header-circuit" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="10" y1="20" x2="45" y2="20" stroke="#12a5d9" stroke-width="1.5" />
+      <line x1="45" y1="20" x2="65" y2="40" stroke="#12a5d9" stroke-width="1.5" />
+      <line x1="65" y1="40" x2="100" y2="40" stroke="#12a5d9" stroke-width="1.5" />
+      <line x1="25" y1="55" x2="55" y2="55" stroke="#ffffff" stroke-width="1.5" />
+      <line x1="55" y1="55" x2="70" y2="40" stroke="#ffffff" stroke-width="1.5" />
+      <circle cx="10" cy="20" r="2.5" fill="#12a5d9" />
+      <circle cx="45" cy="20" r="2" fill="#12a5d9" />
+      <circle cx="65" cy="40" r="2" fill="#ffffff" />
+      <circle cx="25" cy="55" r="2.5" fill="#ffffff" />
+      <circle cx="100" cy="40" r="2.5" fill="#12a5d9" />
+    </svg>
 
-  <div class="form-group">
-    <label for="aiProvider">AI Provider</label>
-    <select id="aiProvider">
-      <option value="gemini">Google Gemini</option>
-      <option value="groq">Groq (Ultra-Fast)</option>
-      <option value="openai">OpenAI (ChatGPT)</option>
-      <option value="anthropic">Claude (Anthropic)</option>
-      <option value="openrouter">OpenRouter (Multi-Model)</option>
-    </select>
-  </div>
-
-  <div class="card">
-    <div class="form-group">
-      <label for="apiKey" id="apiKeyLabel">API Key</label>
-      <input type="password" id="apiKey" placeholder="Enter API Key">
-    </div>
-    <div class="form-group">
-      <label for="modelSelect">Model</label>
-      <select id="modelSelect"></select>
-    </div>
-    <div class="form-group" id="customModelGroup" style="display: none; margin-top: 8px;">
-      <label for="customModelInput">Custom Model Name</label>
-      <input type="text" id="customModelInput" placeholder="e.g. gemini-2.5-pro or gpt-4o-2024-08-06">
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="toggle-row">
-      <span class="toggle-label" style="color:#38bdf8;font-weight:600;">Auto-Select Answers</span>
-      <label class="switch"><input type="checkbox" id="autoSelectToggle" checked><span class="slider"></span></label>
-    </div>
-    <div class="toggle-row">
-      <span class="toggle-label" style="color:#10b981;font-weight:600;">Auto-Submit Answers</span>
-      <label class="switch"><input type="checkbox" id="autoSubmitToggle"><span class="slider"></span></label>
-    </div>
-    <div class="toggle-row">
-      <span class="toggle-label">Show AI Answer Cards</span>
-      <label class="switch"><input type="checkbox" id="showAnswersToggle" checked><span class="slider"></span></label>
-    </div>
-    <div class="toggle-row">
-      <span class="toggle-label">Process on Page Switch</span>
-      <label class="switch"><input type="checkbox" id="processOnSwitchToggle" checked><span class="slider"></span></label>
-    </div>
-    <div class="toggle-row">
-      <span class="toggle-label" style="color:#c084fc;font-weight:600;">MCQ Decision Model (Mercury Decide ⚡)</span>
-      <label class="switch"><input type="checkbox" id="useDecisionModelToggle"><span class="slider"></span></label>
+    <div class="header-status-row">
+      <div id="popupStatusBadge" class="status-badge">
+        <span id="popupStatusDot" class="status-dot"></span>
+        <span id="popupStatusText">Ready</span>
+      </div>
+      <div class="shortcut-text">Alt+Shift+Q</div>
     </div>
   </div>
 
-  <div class="btn-group">
-    <!-- Primary action buttons -->
-    <button class="btn btn-quiz"   id="processPage">Auto-Solve Quiz 🚀</button>
-    <button class="btn btn-scroll" id="autoScrollBtn">Auto-Scroll &amp; Complete Module 📜</button>
+  <!-- Main Content on Canvas -->
+  <div class="content-area">
+    <!-- 2. AI Provider Surface -->
+    <div class="panel">
+      <div class="panel-header-row">
+        <div class="icon-tile">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+        </div>
+        <span class="panel-title">AI provider</span>
+      </div>
 
-    <!-- Control row -->
-    <div class="btn-row">
-      <button class="btn btn-pause" id="pauseBtn">Pause ⏸️</button>
-      <button class="btn btn-stop"  id="stopBtn">Stop ⏹️</button>
-      <button class="btn btn-save"  id="saveKey" style="flex:1;">Save Settings</button>
+      <div class="form-group">
+        <label for="aiProvider">AI Provider</label>
+        <select id="aiProvider">
+          <option value="gemini">Google Gemini</option>
+          <option value="groq">Groq (Ultra-Fast)</option>
+          <option value="openai">OpenAI (ChatGPT)</option>
+          <option value="anthropic">Claude (Anthropic)</option>
+          <option value="openrouter">OpenRouter (Multi-Model)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="apiKey" id="apiKeyLabel">API Key</label>
+        <input type="password" id="apiKey" placeholder="Enter API Key">
+      </div>
+
+      <div class="form-group">
+        <label for="modelSelect">Model</label>
+        <select id="modelSelect"></select>
+      </div>
+
+      <div class="form-group" id="customModelGroup" style="display: none; margin-top: 8px;">
+        <label for="customModelInput">Custom Model Name</label>
+        <input type="text" id="customModelInput" placeholder="e.g. gemini-2.5-pro or gpt-4o-2024-08-06">
+      </div>
     </div>
 
-    <!-- Export row -->
-    <div style="display: flex; gap: 6px; margin-top: 6px;">
-      <button class="btn" id="exportMdBtn" style="background: #0d9488; color: white; font-size: 11px; flex: 1; padding: 6px;">📥 Export Markdown (.md)</button>
-      <button class="btn" id="exportJsonBtn" style="background: #6366f1; color: white; font-size: 11px; flex: 1; padding: 6px;">💾 Export JSON (.json)</button>
+    <!-- 3. Mercury Decide Navy Panel -->
+    <div class="mercury-panel">
+      <div class="mercury-header-row">
+        <div class="mercury-brand-left">
+          <div class="mercury-bolt-tile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#071c33" stroke="#071c33" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <div class="mercury-titles">
+            <span class="mercury-title">Mercury Decide</span>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="useDecisionModelToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="mercury-caption-row">
+        <span class="mercury-caption">inception/mercury-decide:free</span>
+      </div>
+
+      <div class="mercury-field-area">
+        <label for="mercuryApiKey">Mercury API Key</label>
+        <input type="password" id="mercuryApiKey" autocomplete="off" spellcheck="false" placeholder="Paste OpenRouter API key" class="mercury-input">
+        <p class="mercury-helper">OpenRouter key used only for Mercury Decide. Your main provider stays as the fallback when Mercury is unsure.</p>
+      </div>
     </div>
+
+    <!-- 4. Automation Surface -->
+    <div class="panel">
+      <div class="panel-header-row">
+        <div class="icon-tile">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </div>
+        <span class="panel-title">Automation</span>
+      </div>
+
+      <div class="automation-row">
+        <div class="automation-info">
+          <div class="automation-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+              <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+          </div>
+          <div class="automation-text">
+            <span class="automation-label">Auto-Select Answers</span>
+            <span class="automation-desc">Checks correct option inputs automatically</span>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autoSelectToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="automation-row">
+        <div class="automation-info">
+          <div class="automation-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </div>
+          <div class="automation-text">
+            <span class="automation-label">Auto-Submit Answers</span>
+            <span class="automation-desc">Submits answers immediately after selection</span>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="autoSubmitToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="automation-row">
+        <div class="automation-info">
+          <div class="automation-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+          </div>
+          <div class="automation-text">
+            <span class="automation-label">Show answer cards on the page</span>
+            <span class="automation-desc">Displays AI guidance panels alongside questions</span>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="showAnswersToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="automation-row">
+        <div class="automation-info">
+          <div class="automation-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </div>
+          <div class="automation-text">
+            <span class="automation-label">Solve new pages automatically</span>
+            <span class="automation-desc">Runs detection when switching quiz sub-topics</span>
+          </div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="processOnSwitchToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 5. Save settings Button -->
+    <button class="btn btn-navy" id="saveKey">Save settings</button>
+
+    <!-- Run Area -->
+    <div class="run-area">
+      <button class="btn btn-primary" id="processPage">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <polygon points="6 4 20 12 6 20 6 4"></polygon>
+        </svg>
+        <span>Auto-Solve Quiz</span>
+      </button>
+
+      <button class="btn btn-secondary" id="autoScrollBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+        </svg>
+        <span>Auto-Scroll &amp; Complete Module</span>
+      </button>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary btn-control" id="pauseBtn">Pause</button>
+        <button class="btn btn-secondary btn-control btn-stop" id="stopBtn">Stop</button>
+      </div>
+
+      <div class="btn-ghost-row">
+        <button class="btn btn-ghost" id="exportMdBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Export Markdown (.md)</span>
+        </button>
+        <button class="btn btn-ghost" id="exportJsonBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Export JSON (.json)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Status Area -->
+    <div id="status" aria-live="polite"></div>
   </div>
-
-  <div id="status"></div>
-  <div class="hint">Shortcut: <b>Alt+Shift+Q</b> — Auto-Solve Quiz</div>
 
   <script src="popup.js"></script>
 </body>

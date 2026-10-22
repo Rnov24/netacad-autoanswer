@@ -39,14 +39,14 @@ function createAiAssistantUI(uiContainerId, index) {
   Object.assign(uiContainer.style, {
     marginTop: "12px",
     marginBottom: "12px",
-    padding: "12px 14px",
-    border: "1px solid #3b82f6",
-    borderRadius: "8px",
-    backgroundColor: "#1e293b",
-    color: "#f8fafc",
+    padding: "16px",
+    border: "1px solid #d8e1e9",
+    borderRadius: "14px",
+    backgroundColor: "#ffffff",
+    color: "#10243e",
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
     fontSize: "13px",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.25)",
+    boxShadow: "0 1px 2px rgba(7, 28, 51, 0.05), 0 10px 24px rgba(7, 28, 51, 0.05)",
   });
 
   const headerDiv = document.createElement("div");
@@ -54,16 +54,43 @@ function createAiAssistantUI(uiContainerId, index) {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: "8px",
+    marginBottom: "10px",
+  });
+
+  const headerLeft = document.createElement("div");
+  Object.assign(headerLeft.style, {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+  });
+
+  const aiTile = document.createElement("div");
+  aiTile.textContent = "AI";
+  Object.assign(aiTile.style, {
+    width: "30px",
+    height: "30px",
+    borderRadius: "8px",
+    backgroundColor: "#071c33",
+    color: "#ffffff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: "700",
+    fontSize: "12px",
+    letterSpacing: "-0.01em",
+    flexShrink: "0",
   });
 
   const titleElement = document.createElement("span");
   titleElement.textContent = "AI Assistant";
   Object.assign(titleElement.style, {
-    fontWeight: "700",
-    color: "#38bdf8",
+    fontWeight: "650",
+    color: "#071c33",
     fontSize: "13px",
   });
+
+  headerLeft.appendChild(aiTile);
+  headerLeft.appendChild(titleElement);
 
   const headerRight = document.createElement("div");
   Object.assign(headerRight.style, {
@@ -74,24 +101,27 @@ function createAiAssistantUI(uiContainerId, index) {
 
   const badge = document.createElement("span");
   badge.className = "ai-status-badge";
-  badge.textContent = "Analyzing...";
+  badge.textContent = "Working";
   Object.assign(badge.style, {
     fontSize: "11px",
     padding: "2px 8px",
-    borderRadius: "12px",
-    backgroundColor: "rgba(56, 189, 248, 0.15)",
-    color: "#38bdf8",
-    border: "1px solid rgba(56, 189, 248, 0.3)",
+    borderRadius: "4px",
+    backgroundColor: "#f4f4f4",
+    color: "#525252",
+    border: "1px solid #d8d8d8",
+    transition: "background-color 200ms, color 200ms, border-color 200ms",
   });
 
   const toggleBtn = document.createElement("button");
   toggleBtn.className = "ai-toggle-btn";
   toggleBtn.textContent = "▼";
   toggleBtn.title = "Collapse / Expand AI Panel";
+  toggleBtn.setAttribute("aria-label", "Collapse or expand answer panel");
+  toggleBtn.setAttribute("aria-expanded", "true");
   Object.assign(toggleBtn.style, {
     background: "none",
     border: "none",
-    color: "#94a3b8",
+    color: "#52677d",
     cursor: "pointer",
     fontSize: "12px",
     padding: "0 4px",
@@ -100,31 +130,33 @@ function createAiAssistantUI(uiContainerId, index) {
 
   headerRight.appendChild(badge);
   headerRight.appendChild(toggleBtn);
-  headerDiv.appendChild(titleElement);
+  headerDiv.appendChild(headerLeft);
   headerDiv.appendChild(headerRight);
   uiContainer.appendChild(headerDiv);
 
   const runningBanner = document.createElement("div");
   runningBanner.className = "ai-running-banner";
   runningBanner.style.display = "none";
-  runningBanner.innerHTML = `<span class="netacad-running-dot"></span> ⚡ Quiz Auto-Pilot is Running... Please do not switch or close this tab!`;
+  runningBanner.innerHTML = `<span class="netacad-running-dot"></span> Quiz Auto-Pilot is Running... Please do not switch or close this tab!`;
   uiContainer.appendChild(runningBanner);
 
   const aiAnswerDisplay = document.createElement("div");
   aiAnswerDisplay.className = "ai-answer-display";
+  aiAnswerDisplay.setAttribute("aria-live", "polite");
   Object.assign(aiAnswerDisplay.style, {
-    margin: "8px 0",
-    padding: "8px 10px",
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    borderRadius: "6px",
-    borderLeft: "3px solid #38bdf8",
+    margin: "10px 0",
+    padding: "12px",
+    backgroundColor: "#f2f7fa",
+    borderRadius: "10px",
+    border: "1px solid #dce8ef",
     lineHeight: "1.5",
     wordBreak: "break-word",
-    color: "#e2e8f0",
+    color: "#10243e",
     maxHeight: "160px",
     overflowY: "auto",
+    fontSize: "12px",
   });
-  aiAnswerDisplay.textContent = "Initializing...";
+  aiAnswerDisplay.textContent = "Waiting for an answer.";
   uiContainer.appendChild(aiAnswerDisplay);
 
   const btnRow = document.createElement("div");
@@ -140,6 +172,7 @@ function createAiAssistantUI(uiContainerId, index) {
     aiAnswerDisplay.style.display = isCollapsed ? "none" : "block";
     btnRow.style.display = isCollapsed ? "none" : "flex";
     toggleBtn.textContent = isCollapsed ? "▲" : "▼";
+    toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
     uiContainer.style.marginBottom = isCollapsed ? "4px" : "12px";
   });
 
@@ -147,41 +180,78 @@ function createAiAssistantUI(uiContainerId, index) {
   refreshButton.className = "ai-refresh-button";
   refreshButton.textContent = "Refresh";
   Object.assign(refreshButton.style, {
-    padding: "5px 10px",
-    border: "none",
-    borderRadius: "4px",
-    backgroundColor: "#2563eb",
-    color: "white",
+    height: "30px",
+    padding: "0 12px",
+    border: "1px solid #0875a6",
+    borderRadius: "8px",
+    backgroundColor: "#0875a6",
+    color: "#ffffff",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "12px",
     fontWeight: "600",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    transition: "background-color 0.15s, border-color 0.15s",
+  });
+  refreshButton.addEventListener("mouseover", () => {
+    if (!refreshButton.disabled) refreshButton.style.backgroundColor = "#065e87";
+  });
+  refreshButton.addEventListener("mouseout", () => {
+    if (!refreshButton.disabled) refreshButton.style.backgroundColor = "#0875a6";
   });
 
   const autoSelectButton = document.createElement("button");
   autoSelectButton.className = "ai-autoselect-button";
   autoSelectButton.textContent = "Auto-Select";
   Object.assign(autoSelectButton.style, {
-    padding: "5px 10px",
-    border: "none",
-    borderRadius: "4px",
-    backgroundColor: "#059669",
-    color: "white",
+    height: "30px",
+    padding: "0 12px",
+    border: "1px solid #071c33",
+    borderRadius: "8px",
+    backgroundColor: "#071c33",
+    color: "#ffffff",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "12px",
     fontWeight: "600",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    transition: "background-color 0.15s, border-color 0.15s",
+  });
+  autoSelectButton.addEventListener("mouseover", () => {
+    if (!autoSelectButton.disabled) autoSelectButton.style.backgroundColor = "#0a294d";
+  });
+  autoSelectButton.addEventListener("mouseout", () => {
+    if (!autoSelectButton.disabled) autoSelectButton.style.backgroundColor = "#071c33";
   });
 
   const copyButton = document.createElement("button");
   copyButton.className = "ai-copy-button";
   copyButton.textContent = "Copy";
   Object.assign(copyButton.style, {
-    padding: "5px 10px",
-    border: "1px solid #475569",
-    borderRadius: "4px",
-    backgroundColor: "#334155",
-    color: "#cbd5e1",
+    height: "30px",
+    padding: "0 12px",
+    border: "1px solid #d8e1e9",
+    borderRadius: "8px",
+    backgroundColor: "#ffffff",
+    color: "#10243e",
     cursor: "pointer",
-    fontSize: "11px",
+    fontSize: "12px",
+    fontWeight: "600",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    transition: "background-color 0.15s, border-color 0.15s",
+  });
+  copyButton.addEventListener("mouseover", () => {
+    if (!copyButton.disabled) copyButton.style.backgroundColor = "#f8fafc";
+  });
+  copyButton.addEventListener("mouseout", () => {
+    if (!copyButton.disabled) copyButton.style.backgroundColor = "#ffffff";
   });
 
   btnRow.appendChild(refreshButton);
@@ -852,7 +922,7 @@ function navigateToFirstIncompleteLevel3Item() {
     return true;
   }
 
-  console.log("NetAcad ToC Navigation: All course sections & topics are 100% completed! 🎉");
+  console.log("NetAcad ToC Navigation: All course sections & topics are 100% completed!");
   return false;
 }
 
@@ -895,16 +965,25 @@ async function autoSelectOptionsInDom(mcqViewElement, answerText) {
       return;
     }
 
-    const rawAnswers = answerText.split(" /// ").map((a) => a.trim()).filter(Boolean);
+    // Accept both the raw API format ("A /// B") and the rendered panel text
+    // read by the manual Auto-Select button ("AI Suggestions:\n- A\n- B").
+    const rawAnswers = answerText
+      .split(" /// ")
+      .flatMap((part) => part.split(/\r?\n/))
+      .map((a) => a.trim().replace(/^[-*•]\s+/, "").trim())
+      .filter(Boolean);
     const targetAnswers = rawAnswers.map((a) => cleanOptionTextForMatch(a));
 
     const baseView = sr ? sr.querySelector('base-view[type="component"]') : null;
+    // Scope the search to this question's own DOM: its shadow root, the nested
+    // base-view root, shadow roots inside the element, and the block-level root
+    // that hosts the element. Searching the whole document here filled unrelated
+    // page inputs and cleared other questions' selections on multi-question pages.
     const searchRoots = [
       sr,
       baseView && baseView.shadowRoot ? baseView.shadowRoot : null,
       mcqViewElement && mcqViewElement.getRootNode ? mcqViewElement.getRootNode() : null,
-      ...(typeof getShadowRoots === "function" ? getShadowRoots(document) : []),
-      document,
+      ...(typeof getShadowRoots === "function" && mcqViewElement ? getShadowRoots(mcqViewElement) : []),
     ].filter((r) => r && r instanceof Node);
 
     // Tier 1: Check for Text Input Fields (Fill-in-the-blank)
@@ -1448,10 +1527,12 @@ async function handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDi
     return;
   }
 
-  aiAnswerDisplay.textContent = "Asking AI assistant...";
-  badge.textContent = "Processing";
-  badge.style.color = "#f59e0b";
-  badge.style.borderColor = "rgba(245, 158, 11, 0.3)";
+  aiAnswerDisplay.textContent = "Asking the AI assistant...";
+  badge.textContent = "Working";
+  badge.style.backgroundColor = "#fdf1e2";
+  badge.style.color = "#92400e";
+  badge.style.borderColor = "#f3d9ae";
+  badge.classList.remove("ai-badge-settle");
 
   const fetchFn = typeof getAiAnswer === "function" ? getAiAnswer : (window.getAiAnswer || globalThis.getAiAnswer);
   const detectTypeFn = typeof detectMcqInputType === "function" ? detectMcqInputType : (window.detectMcqInputType || globalThis.detectMcqInputType);
@@ -1459,9 +1540,11 @@ async function handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDi
   const rawAiResponse = await fetchFn(questionText, answerTexts, apiKey, qType);
 
   if (rawAiResponse && !rawAiResponse.toLowerCase().startsWith("error:")) {
-    badge.textContent = "Ready";
-    badge.style.color = "#10b981";
-    badge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+    badge.textContent = "Done";
+    badge.style.backgroundColor = "#e7f4ec";
+    badge.style.color = "#166534";
+    badge.style.borderColor = "#bfe3cd";
+    badge.classList.add("ai-badge-settle");
 
     const multiAnswerSeparator = " /// ";
     aiAnswerDisplay.textContent = "";
@@ -1481,8 +1564,10 @@ async function handleRefreshAction(questionText, answerTexts, apiKey, aiAnswerDi
     }
   } else {
     badge.textContent = "Error";
-    badge.style.color = "#f87171";
-    badge.style.borderColor = "rgba(248, 113, 113, 0.3)";
+    badge.style.backgroundColor = "#fdecea";
+    badge.style.color = "#8f1d14";
+    badge.style.borderColor = "#f5c6c0";
+    badge.classList.remove("ai-badge-settle");
     aiAnswerDisplay.textContent = rawAiResponse || "Error: No response from AI provider.";
   }
 }
@@ -1543,19 +1628,26 @@ async function processSingleQuestion(mcqViewElement, index, apiKey, preFetchedAi
   });
 
   if (preFetchedAiAnswer === "BATCH_PROCESSING_STARTED") {
-    aiAnswerDisplay.textContent = "Batch processing... Please wait.";
-    badge.textContent = "Batching";
-    badge.style.color = "#38bdf8";
+    aiAnswerDisplay.textContent = "Asking the AI assistant for all questions on this page...";
+    badge.textContent = "Working";
+    badge.style.backgroundColor = "#fdf1e2";
+    badge.style.color = "#92400e";
+    badge.style.borderColor = "#f3d9ae";
+    badge.classList.remove("ai-badge-settle");
   } else if (preFetchedAiAnswer) {
     if (preFetchedAiAnswer.toLowerCase().startsWith("error:")) {
       badge.textContent = "Error";
-      badge.style.color = "#f87171";
-      badge.style.borderColor = "rgba(248, 113, 113, 0.3)";
+      badge.style.backgroundColor = "#fdecea";
+      badge.style.color = "#8f1d14";
+      badge.style.borderColor = "#f5c6c0";
+      badge.classList.remove("ai-badge-settle");
       aiAnswerDisplay.textContent = preFetchedAiAnswer;
     } else {
-      badge.textContent = "Ready";
-      badge.style.color = "#10b981";
-      badge.style.borderColor = "rgba(16, 185, 129, 0.3)";
+      badge.textContent = "Done";
+      badge.style.backgroundColor = "#e7f4ec";
+      badge.style.color = "#166534";
+      badge.style.borderColor = "#bfe3cd";
+      badge.classList.add("ai-badge-settle");
 
       const multiAnswerSeparator = " /// ";
       aiAnswerDisplay.textContent = "";

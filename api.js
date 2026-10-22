@@ -10,6 +10,7 @@ function getProviderConfig() {
         "openaiApiKey", "openaiModel",
         "anthropicApiKey", "anthropicModel",
         "openrouterApiKey", "openrouterModel",
+        "mercuryApiKey",
         "useDecisionModelForMcq",
       ],
       (res) => {
@@ -33,6 +34,7 @@ function getProviderConfig() {
           geminiModel: res.geminiModel || defaults.gemini,
           openrouterApiKey: res.openrouterApiKey || (provider === "openrouter" ? res[keyField] : ""),
           openrouterModel: res.openrouterModel || defaults.openrouter,
+          mercuryApiKey: res.mercuryApiKey || "",
           useDecisionModelForMcq: res.useDecisionModelForMcq === true,
         });
       }
@@ -399,7 +401,7 @@ function cleanOptionPrefix(str) {
 
 async function callOpenRouterDecisionsApi(state, questionsDict, apiKey, modelName = "inception/mercury-decide:free") {
   const model = modelName || "inception/mercury-decide:free";
-  const url = "https://openrouter.ai/api/v1/decisions";
+  const url = "https://openrouter.ai/api/alpha/decisions";
 
   const payload = {
     model: model,
@@ -498,7 +500,7 @@ function mapDecisionChoiceToAnswer(ansData, answers, criteria) {
  * Fallback to Gemini when confidence < 70% or when Decision Model fails.
  * Prefers direct Google Gemini API if key is present, otherwise falls back to Gemini via OpenRouter.
  */
-async function answerWithGeminiFallback(question, answers, questionType = "MCQ_SINGLE", cfg = null) {
+async function answerWithGeminiFallback(question, answers, questionType = "MCQ_SINGLE", cfg = null, overrideApiKey = null) {
   const config = cfg || (await getProviderConfig());
   const prompt = buildSinglePrompt(question, answers, questionType);
 
@@ -517,7 +519,7 @@ async function answerWithGeminiFallback(question, answers, questionType = "MCQ_S
   }
 
   // 2. OpenRouter Gemini Flash fallback
-  const orKey = config.openrouterApiKey || config.apiKey;
+  const orKey = overrideApiKey || config.mercuryApiKey || config.openrouterApiKey || (config.provider === "openrouter" ? config.apiKey : "");
   if (orKey) {
     console.log("NetAcad Decision Engine: Falling back to Gemini via OpenRouter (google/gemini-2.5-flash)...");
     const raw = await callOpenRouterApi(prompt, orKey, "google/gemini-2.5-flash", true);
@@ -544,7 +546,7 @@ async function getAiAnswer(questionText, answerTexts, overrideApiKey = null, que
     );
 
     if (shouldUseDecision) {
-      const orApiKey = overrideApiKey || cfg.openrouterApiKey || (cfg.provider === "openrouter" ? cfg.apiKey : "");
+      const orApiKey = overrideApiKey || cfg.mercuryApiKey || cfg.openrouterApiKey || (cfg.provider === "openrouter" ? cfg.apiKey : "");
       if (orApiKey) {
         const decModel = (cfg.provider === "openrouter" && (cfg.model || "").includes("decide"))
           ? cfg.model
@@ -581,10 +583,10 @@ async function getAiAnswer(questionText, answerTexts, overrideApiKey = null, que
           }
 
           console.log(`NetAcad Decision Engine: Confidence ${(confidence * 100).toFixed(1)}% is under 70% threshold. Falling back to Gemini...`);
-          return await answerWithGeminiFallback(questionText, answerTexts, "MCQ_SINGLE", cfg);
+          return await answerWithGeminiFallback(questionText, answerTexts, "MCQ_SINGLE", cfg, overrideApiKey);
         } catch (decErr) {
           console.warn("NetAcad Decision Engine: Decision API error, falling back to Gemini:", decErr);
-          return await answerWithGeminiFallback(questionText, answerTexts, "MCQ_SINGLE", cfg);
+          return await answerWithGeminiFallback(questionText, answerTexts, "MCQ_SINGLE", cfg, overrideApiKey);
         }
       }
     }
@@ -620,7 +622,7 @@ async function getAiAnswersForBatch(questionsWithAnswers, overrideApiKey = null)
     const cfg = await getProviderConfig();
     const isDecisionConfigured = (cfg.provider === "openrouter" && (cfg.model || "").includes("decide")) ||
                                  cfg.useDecisionModelForMcq === true;
-    const orApiKey = overrideApiKey || cfg.openrouterApiKey || (cfg.provider === "openrouter" ? cfg.apiKey : "");
+    const orApiKey = overrideApiKey || cfg.mercuryApiKey || cfg.openrouterApiKey || (cfg.provider === "openrouter" ? cfg.apiKey : "");
 
     if (isDecisionConfigured && orApiKey) {
       const decModel = (cfg.provider === "openrouter" && (cfg.model || "").includes("decide"))
@@ -697,7 +699,7 @@ async function getAiAnswersForBatch(questionsWithAnswers, overrideApiKey = null)
         for (const fIdx of fallbackIndices) {
           try {
             const q = questionsWithAnswers[fIdx];
-            const ans = await answerWithGeminiFallback(q.question, q.answers, q.questionType, cfg);
+            const ans = await answerWithGeminiFallback(q.question, q.answers, q.questionType, cfg, overrideApiKey);
             answersArray[fIdx] = cleanOptionPrefix(ans);
           } catch (fbErr) {
             console.error(`NetAcad Decision Engine: Gemini fallback failed for question ${fIdx + 1}:`, fbErr);

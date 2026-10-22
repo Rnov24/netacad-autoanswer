@@ -42,7 +42,7 @@ NetAcad AI Assistant is a browser extension (Manifest V3) for Cisco NetAcad that
 3. **Configure API Key**:
    - Click the extension icon in Chrome toolbar.
    - Select your preferred AI Provider (e.g. Gemini, Groq, OpenAI, Claude).
-   - Enter your API key and click **Save Settings**.
+   - Enter your API key and click **Save Settings**. Mercury Decide has a dedicated OpenRouter API key field in the popup and the main provider remains the fallback.
 4. **Run on NetAcad**:
    - Open any Cisco NetAcad quiz or course module page.
    - Click **Auto-Solve Quiz 🚀** to solve and submit quiz questions.

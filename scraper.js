@@ -82,13 +82,13 @@ async function waitMsScroller(ms) {
 
 function pauseAutonomousLoop() {
   isAutonomousPaused = true;
-  console.log("NetAcad AutoAnswer: Auto-Pilot PAUSED ⏸️");
+  console.log("NetAcad AutoAnswer: Auto-Pilot PAUSED");
   return { isRunning: isAutonomousRunning, isPaused: isAutonomousPaused };
 }
 
 function resumeAutonomousLoop() {
   isAutonomousPaused = false;
-  console.log("NetAcad AutoAnswer: Auto-Pilot RESUMED ▶️");
+  console.log("NetAcad AutoAnswer: Auto-Pilot RESUMED");
   return { isRunning: isAutonomousRunning, isPaused: isAutonomousPaused };
 }
 
@@ -99,13 +99,13 @@ function toggleAutonomousPause() {
 function stopAutonomousLoop() {
   isAutonomousRunning = false;
   isAutonomousPaused = false;
-  console.log("NetAcad AutoAnswer: Auto-Pilot STOPPED ⏹️");
+  console.log("NetAcad AutoAnswer: Auto-Pilot STOPPED");
   return { isRunning: false, isPaused: false };
 }
 
 function stopCourseScrollerLoop() {
   isCourseScrollerRunning = false;
-  console.log("NetAcad AutoAnswer: Course Scroller STOPPED ⏹️");
+  console.log("NetAcad AutoAnswer: Course Scroller STOPPED");
   return { isRunning: false };
 }
 
@@ -409,7 +409,7 @@ async function runAutonomousLoop() {
 
       // 0. Check if quiz is already completed and displaying the score/result page
       if (detectResultFn && detectResultFn()) {
-        console.log("NetAcad Auto-Pilot: Quiz Result Page detected — quiz completed! 🎉");
+        console.log("NetAcad Auto-Pilot: Quiz Result Page detected — quiz completed!");
         break;
       }
 
@@ -452,7 +452,7 @@ async function runAutonomousLoop() {
 
       // 3. Re-verify result or submit page
       if (detectResultFn && detectResultFn()) {
-        console.log("NetAcad Auto-Pilot: Quiz Result Page detected — quiz completed! 🎉");
+        console.log("NetAcad Auto-Pilot: Quiz Result Page detected — quiz completed!");
         break;
       }
       if (detectFn && detectFn()) {
@@ -519,12 +519,12 @@ async function runCourseScrollerLoop() {
 
       // Respect pause state — yields until resumed or stopped
       if (isAutonomousPaused) {
-        console.log("NetAcad AutoAnswer: Course Scroller PAUSED ⏸️");
+        console.log("NetAcad AutoAnswer: Course Scroller PAUSED");
         while (isAutonomousPaused && isCourseScrollerRunning) {
           await new Promise((r) => setTimeout(r, 200));
         }
         if (!isCourseScrollerRunning) break;
-        console.log("NetAcad AutoAnswer: Course Scroller RESUMED ▶️");
+        console.log("NetAcad AutoAnswer: Course Scroller RESUMED");
       }
 
       scrollerCurrentSection = iterations + 1;
@@ -592,7 +592,7 @@ async function runCourseScrollerLoop() {
         }
 
         if (!navigated) {
-          console.log("NetAcad AutoAnswer: Course Scroller — all course topics 100% completed! 🎉");
+          console.log("NetAcad AutoAnswer: Course Scroller — all course topics 100% completed!");
           break;
         }
 
